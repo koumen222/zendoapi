@@ -40,6 +40,8 @@ function AdminOrdersPage() {
         params.search = searchQuery.trim();
       }
 
+      console.log('📥 Chargement des commandes avec params:', params);
+
       const response = await api.get('/api/admin/orders', {
         headers: {
           'x-admin-key': 'ZENDO_ADMIN_2026',
@@ -47,12 +49,30 @@ function AdminOrdersPage() {
         params,
       });
 
+      console.log('📦 Réponse reçue:', {
+        success: response.data.success,
+        ordersCount: response.data.orders?.length || 0,
+        total: response.data.pagination?.total || 0,
+        data: response.data,
+      });
+
       if (response.data.success) {
-        setOrders(response.data.orders || []);
+        const ordersList = response.data.orders || [];
+        console.log(`✅ ${ordersList.length} commande(s) chargée(s)`);
+        setOrders(ordersList);
+      } else {
+        console.error('❌ Réponse non réussie:', response.data);
+        setError(response.data.message || 'Erreur lors du chargement des commandes');
       }
     } catch (err) {
-      setError('Erreur lors du chargement des commandes');
-      console.error(err);
+      console.error('❌ Erreur lors du chargement des commandes:', err);
+      console.error('Détails:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+      });
+      setError(err.response?.data?.message || 'Erreur lors du chargement des commandes');
     } finally {
       setLoading(false);
     }
@@ -293,15 +313,24 @@ function AdminOrdersPage() {
     }
 
     try {
-      // Utiliser la route de suppression multiple du backend
-      const response = await api.delete('/api/admin/orders', {
-        headers: {
-          'x-admin-key': 'ZENDO_ADMIN_2026',
-        },
-        data: {
-          ids: selectedIds,
-        },
+      console.log('📤 Envoi de la suppression multiple:', {
+        count: selectedIds.length,
+        ids: selectedIds,
+        type: typeof selectedIds,
+        isArray: Array.isArray(selectedIds),
       });
+
+      // Utiliser la route POST pour la suppression multiple (plus fiable avec axios)
+      const response = await api.post(
+        '/api/admin/orders/bulk-delete',
+        { ids: selectedIds },
+        {
+          headers: {
+            'x-admin-key': 'ZENDO_ADMIN_2026',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (response.data.success) {
         const deletedCount = response.data.deletedCount || count;

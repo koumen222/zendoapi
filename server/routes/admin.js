@@ -22,6 +22,79 @@ const checkAdminKey = (req, res, next) => {
 };
 
 /**
+ * POST /api/admin/orders/bulk-delete
+ * Delete multiple orders (admin only)
+ * Utilise POST pour une meilleure compatibilité avec les corps de requête
+ * NOTE: Cette route doit être définie AVANT /orders pour éviter les conflits
+ */
+router.post('/orders/bulk-delete', checkAdminKey, async (req, res) => {
+  try {
+    console.log('📦 Body reçu:', JSON.stringify(req.body));
+    console.log('📦 Type de req.body:', typeof req.body);
+    console.log('📦 req.body.ids:', req.body.ids);
+    console.log('📦 Type de req.body.ids:', typeof req.body.ids);
+    console.log('📦 Est un array?', Array.isArray(req.body.ids));
+
+    const { ids } = req.body;
+
+    // Vérifier que ids existe et est un tableau
+    if (!ids) {
+      console.error('❌ ids est undefined ou null');
+      return res.status(400).json({
+        success: false,
+        message: 'Vous devez fournir un tableau d\'IDs pour supprimer des commandes',
+        received: req.body,
+      });
+    }
+
+    // Convertir en tableau si ce n'est pas déjà un tableau
+    let idsArray = ids;
+    if (!Array.isArray(ids)) {
+      console.log('⚠️  ids n\'est pas un tableau, conversion...');
+      if (typeof ids === 'string') {
+        try {
+          idsArray = JSON.parse(ids);
+        } catch (e) {
+          idsArray = [ids];
+        }
+      } else {
+        idsArray = [ids];
+      }
+    }
+
+    if (idsArray.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le tableau d\'IDs ne peut pas être vide',
+      });
+    }
+
+    console.log(`🗑️  Suppression en masse de ${idsArray.length} commande(s)`);
+    console.log('📋 IDs à supprimer:', idsArray);
+
+    const result = await Order.deleteMany({
+      _id: { $in: idsArray },
+      isSeed: { $ne: true }, // Ne pas supprimer les données de seed
+    });
+
+    console.log(`✅ ${result.deletedCount} commande(s) supprimée(s) avec succès`);
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} commande(s) supprimée(s) avec succès`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error('❌ Admin orders bulk delete error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la suppression des commandes',
+      error: error.message,
+    });
+  }
+});
+
+/**
  * POST /api/admin/orders
  * Create a new order (admin only)
  */
@@ -120,12 +193,15 @@ router.get('/orders', checkAdminKey, async (req, res) => {
       endDate
     } = req.query;
 
+    console.log('📥 GET /api/admin/orders - Query params:', req.query);
+
     const pageNum = parseInt(page);
     const limitNum = Math.min(parseInt(limit), 100); // Max 100 items per page
     const skip = (pageNum - 1) * limitNum;
 
     // Construire le filtre de base (exclure les données de seed)
     const filter = { isSeed: { $ne: true } };
+    console.log('🔍 Filtre de base:', JSON.stringify(filter));
 
     // Filtre par statut
     if (status && status !== 'all') {
@@ -164,7 +240,7 @@ router.get('/orders', checkAdminKey, async (req, res) => {
 
     // Optimisation : utiliser lean() et sélectionner uniquement les champs nécessaires
     const orders = await Order.find(filter)
-      .select('name phone city address productSlug quantity totalPrice productPrice productName productShortDesc status createdAt')
+      .select('_id name phone city address productSlug quantity totalPrice productPrice productName productShortDesc status createdAt')
       .sort(sort)
       .skip(skip)
       .limit(limitNum)
@@ -172,6 +248,8 @@ router.get('/orders', checkAdminKey, async (req, res) => {
 
     // Compter le total avec le même filtre
     const total = await Order.countDocuments(filter);
+
+    console.log(`✅ ${orders.length} commande(s) trouvée(s) sur ${total} total`);
 
     res.json({
       success: true,
@@ -645,46 +723,6 @@ router.delete('/orders', checkAdminKey, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin orders bulk delete error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la suppression des commandes',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * POST /api/admin/orders/bulk-delete
- * Delete multiple orders (admin only)
- * Utilise POST pour une meilleure compatibilité avec les corps de requête
- */
-router.post('/orders/bulk-delete', checkAdminKey, async (req, res) => {
-  try {
-    const { ids } = req.body;
-
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vous devez fournir un tableau d\'IDs pour supprimer des commandes',
-      });
-    }
-
-    console.log(`🗑️  Suppression en masse de ${ids.length} commande(s)`);
-
-    const result = await Order.deleteMany({
-      _id: { $in: ids },
-      isSeed: { $ne: true }, // Ne pas supprimer les données de seed
-    });
-
-    console.log(`✅ ${result.deletedCount} commande(s) supprimée(s) avec succès`);
-
-    res.json({
-      success: true,
-      message: `${result.deletedCount} commande(s) supprimée(s) avec succès`,
-      deletedCount: result.deletedCount,
-    });
-  } catch (error) {
-    console.error('❌ Admin orders bulk delete error:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la suppression des commandes',
