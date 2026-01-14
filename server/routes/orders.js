@@ -102,16 +102,34 @@ router.post('/', async (req, res) => {
           req.connection?.remoteAddress ||
           "";
 
-        await sendMetaPurchase({
+        // Utiliser l'origine de la requête ou le frontend par défaut
+        const origin = req.headers.origin || req.headers.referer;
+        const frontendUrl = origin || "https://b12068c0.zendof.pages.dev";
+
+        console.log('\n═══════════════════════════════════════════════════════════');
+        console.log('📊 META CAPI - Purchase Event');
+        console.log('═══════════════════════════════════════════════════════════');
+        console.log('📦 Order ID:', order._id.toString());
+        console.log('💰 Value:', totalPriceValue, 'XAF');
+        console.log('🌐 URL:', frontendUrl);
+        console.log('📍 IP:', ip || 'N/A');
+
+        const result = await sendMetaPurchase({
           ip,
           userAgent: req.headers["user-agent"] || "",
           value: totalPriceValue,
-          url: req.headers.referer || req.headers.origin || "https://zendo.site",
+          url: frontendUrl,
           currency: "XAF",
           orderId: order._id.toString(),
         });
+
+        if (result.success) {
+          console.log('✅ [META-CAPI] Purchase event successfully sent to Meta');
+        } else {
+          console.warn('⚠️  [META-CAPI] Purchase event failed (non-blocking):', result.message || result.error);
+        }
       } catch (metaError) {
-        // Non-bloquant
+        console.error('❌ [META-CAPI] Unexpected error (non-blocking):', metaError.message);
       }
     });
 
