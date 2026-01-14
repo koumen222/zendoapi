@@ -37,18 +37,50 @@ const ALLOWED_ORIGINS = new Set([
 const corsOptions = {
   origin(origin, cb) {
     // Allow non-browser clients (health checks, curl, server-to-server) with no Origin header.
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+    if (!origin) {
+      console.log("🌐 CORS: No origin header (server-to-server request)");
+      return cb(null, true);
+    }
+    
+    // Check exact matches first
+    if (ALLOWED_ORIGINS.has(origin)) {
+      console.log(`✅ CORS: Allowed origin (exact match): ${origin}`);
+      return cb(null, true);
+    }
+    
     // Allow all Cloudflare Pages deployments (*.zendof.pages.dev)
-    if (origin.endsWith('.zendof.pages.dev')) return cb(null, true);
+    if (origin.endsWith('.zendof.pages.dev')) {
+      console.log(`✅ CORS: Allowed origin (Cloudflare Pages): ${origin}`);
+      return cb(null, true);
+    }
+    
+    console.log(`❌ CORS: Blocked origin: ${origin}`);
     return cb(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Key"],
+  credentials: true,
   maxAge: 86400,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 };
 
+// Debug middleware to log CORS requests
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    console.log(`🔍 OPTIONS preflight request from origin: ${req.headers.origin || 'none'}`);
+    console.log(`🔍 Request headers:`, {
+      'access-control-request-method': req.headers['access-control-request-method'],
+      'access-control-request-headers': req.headers['access-control-request-headers'],
+    });
+  }
+  next();
+});
+
+// Apply CORS to all routes
 app.use(cors(corsOptions));
+
+// Explicitly handle OPTIONS requests for all routes
 app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 
