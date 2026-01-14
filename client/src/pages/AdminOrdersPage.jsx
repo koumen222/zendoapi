@@ -21,19 +21,30 @@ function AdminOrdersPage() {
       fetchOrders();
     }, 30000);
     return () => clearInterval(interval);
-  }, [sortBy]);
+  }, [sortBy, statusFilter, searchQuery]);
 
   const fetchOrders = async () => {
     setLoading(true);
     setError(null);
     try {
+      const params = {
+        sort: sortBy,
+      };
+
+      // Ajouter les filtres côté serveur
+      if (statusFilter && statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+
+      if (searchQuery && searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
+
       const response = await api.get('/api/admin/orders', {
         headers: {
           'x-admin-key': 'ZENDO_ADMIN_2026',
         },
-        params: {
-          sort: sortBy,
-        },
+        params,
       });
 
       if (response.data.success) {
@@ -47,17 +58,8 @@ function AdminOrdersPage() {
     }
   };
 
-  const filteredOrders = orders.filter((order) => {
-    const matchesSearch =
-      order.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.phone?.includes(searchQuery) ||
-      order.productName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.city?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
+  // Plus besoin de filtrer côté client, le serveur le fait déjà
+  const filteredOrders = orders;
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
