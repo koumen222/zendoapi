@@ -20,3 +20,6 @@ pnpm-debug.log*
 Thumbs.db
 .vscode
 .idea
+
+# Submodule directory (should not be tracked)
+zendoapi/

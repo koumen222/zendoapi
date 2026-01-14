@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../utils/api';
+import { trackPurchase, trackInitiateCheckout } from '../utils/metaPixel';
 
 function CODForm({ productSlug }) {
   const [quantity, setQuantity] = useState(1);
@@ -47,6 +48,14 @@ function CODForm({ productSlug }) {
       });
 
       if (response.data.success) {
+        // Déclencher l'événement Purchase Meta Pixel
+        const priceValue = quantity === 1 ? 9900 : quantity === 2 ? 14000 : quantity * 9900;
+        trackPurchase({
+          value: priceValue,
+          currency: 'XAF',
+          orderId: response.data.order?._id || `order_${Date.now()}`,
+        });
+
         setSuccess(true);
         setQuantity(1);
         setFormData({
@@ -120,7 +129,10 @@ function CODForm({ productSlug }) {
         <label className="block text-lg font-bold text-gray-900 mb-4 text-center">
           Choisissez votre offre
         </label>
-        <div className="flex flex-col gap-3">
+        <div 
+          className="flex flex-col gap-3"
+          onFocus={() => trackInitiateCheckout()}
+        >
           {/* Offre 1 */}
           <label className="flex items-center gap-3 cursor-pointer">
             <input
