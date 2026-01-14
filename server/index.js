@@ -59,16 +59,16 @@ const corsOptions = {
     }
     
     // Allow all Cloudflare Pages deployments (*.zendof.pages.dev)
-    // Check both with and without protocol
-    if (normalizedOrigin.includes('.zendof.pages.dev') || normalizedOrigin.endsWith('.zendof.pages.dev')) {
+    // More flexible check - just check if it contains the domain
+    if (normalizedOrigin.includes('zendof.pages.dev')) {
       console.log(`✅ CORS: Allowed origin (Cloudflare Pages): ${normalizedOrigin}`);
       return cb(null, true);
     }
     
-    // Also check if it's a zendof.pages.dev subdomain (more flexible)
+    // Also check via URL parsing for more robust matching
     try {
       const url = new URL(normalizedOrigin);
-      if (url.hostname.endsWith('.zendof.pages.dev') || url.hostname === 'zendof.pages.dev') {
+      if (url.hostname.includes('zendof.pages.dev')) {
         console.log(`✅ CORS: Allowed origin (Cloudflare Pages via URL parsing): ${normalizedOrigin}`);
         return cb(null, true);
       }
@@ -78,7 +78,8 @@ const corsOptions = {
     
     console.log(`❌ CORS: Blocked origin: ${normalizedOrigin}`);
     console.log(`📋 Allowed origins: ${Array.from(ALLOWED_ORIGINS).join(', ')}`);
-    return cb(new Error("Not allowed by CORS"));
+    // Return false to deny, but allow CORS middleware to send proper response
+    return cb(null, false);
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Key"],
@@ -91,16 +92,25 @@ const corsOptions = {
 // Debug middleware to log CORS requests
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
-    console.log(`🔍 OPTIONS preflight request from origin: ${req.headers.origin || 'none'}`);
+    const origin = req.headers.origin;
+    console.log(`🔍 OPTIONS preflight request from origin: ${origin || 'none'}`);
     console.log(`🔍 Request headers:`, {
       'access-control-request-method': req.headers['access-control-request-method'],
       'access-control-request-headers': req.headers['access-control-request-headers'],
     });
+    
+    // Check if origin should be allowed
+    if (origin) {
+      const normalizedOrigin = origin.trim().replace(/\/$/, '');
+      const isAllowed = ALLOWED_ORIGINS.has(normalizedOrigin) || 
+                       normalizedOrigin.includes('.zendof.pages.dev');
+      console.log(`🔍 Origin allowed: ${isAllowed}`);
+    }
   }
   next();
 });
 
-// Apply CORS to all routes
+// Apply CORS to all routes - this must come before other routes
 app.use(cors(corsOptions));
 
 // Explicitly handle OPTIONS requests for all routes
