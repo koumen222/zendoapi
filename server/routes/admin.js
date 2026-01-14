@@ -620,6 +620,7 @@ router.delete('/visits', checkAdminKey, async (req, res) => {
 /**
  * DELETE /api/admin/orders
  * Delete multiple orders (admin only)
+ * NOTE: Gardé pour compatibilité, mais POST /orders/bulk-delete est préféré
  */
 router.delete('/orders', checkAdminKey, async (req, res) => {
   try {
@@ -644,6 +645,46 @@ router.delete('/orders', checkAdminKey, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin orders bulk delete error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la suppression des commandes',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/orders/bulk-delete
+ * Delete multiple orders (admin only)
+ * Utilise POST pour une meilleure compatibilité avec les corps de requête
+ */
+router.post('/orders/bulk-delete', checkAdminKey, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vous devez fournir un tableau d\'IDs pour supprimer des commandes',
+      });
+    }
+
+    console.log(`🗑️  Suppression en masse de ${ids.length} commande(s)`);
+
+    const result = await Order.deleteMany({
+      _id: { $in: ids },
+      isSeed: { $ne: true }, // Ne pas supprimer les données de seed
+    });
+
+    console.log(`✅ ${result.deletedCount} commande(s) supprimée(s) avec succès`);
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} commande(s) supprimée(s) avec succès`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error('❌ Admin orders bulk delete error:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la suppression des commandes',

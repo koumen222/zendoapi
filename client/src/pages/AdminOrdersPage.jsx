@@ -293,34 +293,41 @@ function AdminOrdersPage() {
     }
 
     try {
-      const promises = selectedIds.map(orderId =>
-        api.delete(`/api/admin/orders/${orderId}`, {
-          headers: {
-            'x-admin-key': 'ZENDO_ADMIN_2026',
-          },
-        })
-      );
+      // Utiliser la route de suppression multiple du backend
+      const response = await api.delete('/api/admin/orders', {
+        headers: {
+          'x-admin-key': 'ZENDO_ADMIN_2026',
+        },
+        data: {
+          ids: selectedIds,
+        },
+      });
 
-      await Promise.all(promises);
-      
-      // Retirer les commandes de la liste
-      setOrders(orders.filter(order => !selectedIds.includes(order._id)));
-      
-      // Fermer le modal si une commande sélectionnée était ouverte
-      if (selectedOrder && selectedIds.includes(selectedOrder._id)) {
-        setSelectedOrder(null);
+      if (response.data.success) {
+        const deletedCount = response.data.deletedCount || count;
+        
+        // Retirer les commandes de la liste
+        setOrders(orders.filter(order => !selectedIds.includes(order._id)));
+        
+        // Fermer le modal si une commande sélectionnée était ouverte
+        if (selectedOrder && selectedIds.includes(selectedOrder._id)) {
+          setSelectedOrder(null);
+        }
+        
+        // Vider la sélection
+        setSelectedOrders(new Set());
+        
+        // Rafraîchir
+        fetchOrders();
+        
+        alert(`${deletedCount} commande(s) supprimée(s) avec succès`);
+      } else {
+        throw new Error(response.data.message || 'Erreur lors de la suppression');
       }
-      
-      // Vider la sélection
-      setSelectedOrders(new Set());
-      
-      // Rafraîchir
-      fetchOrders();
-      
-      alert(`${count} commande(s) supprimée(s) avec succès`);
     } catch (err) {
       console.error('Erreur lors de la suppression en masse:', err);
-      alert('Erreur lors de la suppression en masse');
+      const errorMessage = err.response?.data?.message || err.message || 'Erreur lors de la suppression en masse';
+      alert(`Erreur: ${errorMessage}`);
     }
   };
 
