@@ -39,6 +39,7 @@ const ALLOWED_ORIGINS = [
   "https://b12068c0.zendof.pages.dev",
   "https://40060d2a.zendof.pages.dev",
   "https://zendo.site",
+  "https://safiroecommerce.shop",
 ];
 
 // Fonction pour vérifier si une origine est autorisée
