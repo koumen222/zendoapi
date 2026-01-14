@@ -47,19 +47,37 @@ const corsOptions = {
       return cb(null, true);
     }
     
+    // Normalize origin (remove trailing slash if present)
+    const normalizedOrigin = origin.trim().replace(/\/$/, '');
+    
+    console.log(`🔍 CORS: Checking origin: "${normalizedOrigin}" (original: "${origin}")`);
+    
     // Check exact matches first
-    if (ALLOWED_ORIGINS.has(origin)) {
-      console.log(`✅ CORS: Allowed origin (exact match): ${origin}`);
+    if (ALLOWED_ORIGINS.has(normalizedOrigin)) {
+      console.log(`✅ CORS: Allowed origin (exact match): ${normalizedOrigin}`);
       return cb(null, true);
     }
     
     // Allow all Cloudflare Pages deployments (*.zendof.pages.dev)
-    if (origin.endsWith('.zendof.pages.dev')) {
-      console.log(`✅ CORS: Allowed origin (Cloudflare Pages): ${origin}`);
+    // Check both with and without protocol
+    if (normalizedOrigin.includes('.zendof.pages.dev') || normalizedOrigin.endsWith('.zendof.pages.dev')) {
+      console.log(`✅ CORS: Allowed origin (Cloudflare Pages): ${normalizedOrigin}`);
       return cb(null, true);
     }
     
-    console.log(`❌ CORS: Blocked origin: ${origin}`);
+    // Also check if it's a zendof.pages.dev subdomain (more flexible)
+    try {
+      const url = new URL(normalizedOrigin);
+      if (url.hostname.endsWith('.zendof.pages.dev') || url.hostname === 'zendof.pages.dev') {
+        console.log(`✅ CORS: Allowed origin (Cloudflare Pages via URL parsing): ${normalizedOrigin}`);
+        return cb(null, true);
+      }
+    } catch (e) {
+      // URL parsing failed, continue with other checks
+    }
+    
+    console.log(`❌ CORS: Blocked origin: ${normalizedOrigin}`);
+    console.log(`📋 Allowed origins: ${Array.from(ALLOWED_ORIGINS).join(', ')}`);
     return cb(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
