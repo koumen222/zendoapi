@@ -30,6 +30,7 @@ app.set("trust proxy", true);
 
 const ALLOWED_ORIGINS = new Set([
   "https://dd9845f3.zendof.pages.dev",
+  "https://b12068c0.zendof.pages.dev",
   "https://zendo.site",
 ]);
 
@@ -38,6 +39,8 @@ const corsOptions = {
     // Allow non-browser clients (health checks, curl, server-to-server) with no Origin header.
     if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+    // Allow all Cloudflare Pages deployments (*.zendof.pages.dev)
+    if (origin.endsWith('.zendof.pages.dev')) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
