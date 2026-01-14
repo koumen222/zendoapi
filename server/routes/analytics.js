@@ -10,14 +10,19 @@ const router = express.Router();
 router.post('/track-visit', async (req, res) => {
   try {
     const { path, referrer, userAgent } = req.body;
-    const ip = req.ip || req.connection.remoteAddress || '';
+    const xff = req.headers["x-forwarded-for"];
+    const ip =
+      (typeof xff === "string" ? xff.split(",")[0].trim() : "") ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      "";
 
     const visit = new Visit({
       path: path || '/',
       referrer: referrer || '',
       userAgent: userAgent || req.headers['user-agent'] || '',
       ip: ip,
-      sessionId: req.sessionID || '',
+      sessionId: "",
     });
 
     await visit.save();

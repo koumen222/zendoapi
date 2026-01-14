@@ -11,6 +11,7 @@ const router = express.Router();
  */
 router.post('/', async (req, res) => {
   try {
+    console.log("[ORDER] New order received");
     const { name, phone, city, address = '', productSlug, quantity = 1 } = req.body;
 
     // Validation
@@ -91,22 +92,26 @@ router.post('/', async (req, res) => {
       city: order.city,
     };
 
-    // Envoyer Meta CAPI Purchase en arrière-plan
+    // Envoyer Meta CAPI Purchase en arrière-plan (ne bloque pas la réponse)
     process.nextTick(async () => {
       try {
-        console.log('🎯 Envoi Meta CAPI Purchase en arrière-plan...');
-        const metaResult = await sendMetaPurchase({
-          ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
-          userAgent: req.headers["user-agent"],
+        const xff = req.headers["x-forwarded-for"];
+        const ip =
+          (typeof xff === "string" ? xff.split(",")[0].trim() : "") ||
+          req.ip ||
+          req.connection?.remoteAddress ||
+          "";
+
+        await sendMetaPurchase({
+          ip,
+          userAgent: req.headers["user-agent"] || "",
           value: totalPriceValue,
-          url: req.headers.referer || "https://zendo.site",
-          currency: 'XAF',
+          url: req.headers.referer || req.headers.origin || "https://zendo.site",
+          currency: "XAF",
           orderId: order._id.toString(),
         });
-        console.log('✅ Meta CAPI Purchase envoyé avec succès');
       } catch (metaError) {
-        console.log('⚠️  Erreur Meta CAPI (non-bloquante):', metaError.message);
-        // Ne pas bloquer le flux en cas d'erreur CAPI
+        // Non-bloquant
       }
     });
 

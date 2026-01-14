@@ -16,7 +16,7 @@ export const sendMetaPurchase = async ({
     const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
     
     if (!META_PIXEL_ID || !META_ACCESS_TOKEN) {
-      console.warn('Meta Pixel ID ou Access Token manquant');
+      console.warn("[META-CAPI] Missing META_PIXEL_ID or META_ACCESS_TOKEN");
       return { success: false, message: 'Configuration manquante' };
     }
 
@@ -42,8 +42,12 @@ export const sendMetaPurchase = async ({
           }
         }
       ],
-      test_event_code: process.env.META_TEST_EVENT_CODE || null,
     };
+
+    const testCode = process.env.META_TEST_EVENT_CODE;
+    if (testCode) {
+      eventData.test_event_code = testCode;
+    }
 
     const response = await axios.post(
       `https://graph.facebook.com/v18.0/${META_PIXEL_ID}/events`,
@@ -59,12 +63,7 @@ export const sendMetaPurchase = async ({
       }
     );
 
-    console.log('✅ Meta CAPI Purchase envoyé:', {
-      orderId: orderId,
-      value: value,
-      currency: currency,
-      responseId: response.data.events_received?.[0]?.event_id
-    });
+    console.log("[META-CAPI] Purchase sent");
     
     return { 
       success: true, 
@@ -73,7 +72,7 @@ export const sendMetaPurchase = async ({
     };
     
   } catch (error) {
-    console.error('❌ Erreur Meta CAPI:', {
+    console.error('[META-CAPI] Error:', {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data
