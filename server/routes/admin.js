@@ -33,13 +33,14 @@ router.get('/orders', checkAdminKey, async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const orders = await Order.find()
+    // Exclure les données de seed (isSeed: true)
+    const orders = await Order.find({ isSeed: { $ne: true } })
       .sort(sort)
       .skip(skip)
       .limit(limitNum)
       .lean();
 
-    const total = await Order.countDocuments();
+    const total = await Order.countDocuments({ isSeed: { $ne: true } });
 
     res.json({
       success: true,
@@ -268,14 +269,16 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     startDate.setDate(startDate.getDate() - daysNum);
     startDate.setHours(0, 0, 0, 0);
 
-    // Calculate visits for the period
+    // Calculate visits for the period (exclure les données de seed)
     const visitsInRange = await Visit.countDocuments({
-      createdAt: { $gte: startDate }
+      createdAt: { $gte: startDate },
+      isSeed: { $ne: true }
     });
 
-    // Get orders in date range (optimized query)
+    // Get orders in date range (exclure les données de seed)
     const ordersInRange = await Order.find({
-      createdAt: { $gte: startDate }
+      createdAt: { $gte: startDate },
+      isSeed: { $ne: true }
     }).lean();
 
     // Calculate stats
@@ -303,11 +306,13 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     const previousEndDate = new Date(startDate);
     
     const previousOrders = await Order.find({
-      createdAt: { $gte: previousStartDate, $lt: previousEndDate }
+      createdAt: { $gte: previousStartDate, $lt: previousEndDate },
+      isSeed: { $ne: true }
     }).lean();
 
     const previousVisits = await Visit.countDocuments({
-      createdAt: { $gte: previousStartDate, $lt: previousEndDate }
+      createdAt: { $gte: previousStartDate, $lt: previousEndDate },
+      isSeed: { $ne: true }
     });
 
     const previousRevenue = previousOrders.reduce((sum, order) => {
@@ -344,10 +349,12 @@ router.get('/stats', checkAdminKey, async (req, res) => {
 
       const [dayVisits, dayOrders] = await Promise.all([
         Visit.countDocuments({
-          createdAt: { $gte: date, $lt: nextDate }
+          createdAt: { $gte: date, $lt: nextDate },
+          isSeed: { $ne: true }
         }),
         Order.countDocuments({
-          createdAt: { $gte: date, $lt: nextDate }
+          createdAt: { $gte: date, $lt: nextDate },
+          isSeed: { $ne: true }
         })
       ]);
 

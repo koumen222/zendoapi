@@ -91,6 +91,10 @@ const orderSchema = new mongoose.Schema(
       enum: ['new', 'called', 'pending', 'processing', 'in_delivery', 'shipped', 'delivered', 'rescheduled', 'cancelled'],
       default: 'new',
     },
+    isSeed: {
+      type: Boolean,
+      default: false,
+    },
     createdAt: {
       type: Date,
       default: Date.now,

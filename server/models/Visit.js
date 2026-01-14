@@ -23,6 +23,10 @@ const visitSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    isSeed: {
+      type: Boolean,
+      default: false,
+    },
     createdAt: {
       type: Date,
       default: Date.now,

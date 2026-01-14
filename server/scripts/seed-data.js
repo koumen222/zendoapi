@@ -28,22 +28,19 @@ async function seedData() {
     // Vérifier les données existantes
     const existingVisits = await Visit.countDocuments();
     const existingOrders = await Order.countDocuments();
+    const seedOrders = await Order.countDocuments({ isSeed: true });
     
     console.log(`📊 Données existantes:`);
     console.log(`   Visites: ${existingVisits}`);
-    console.log(`   Commandes: ${existingOrders}\n`);
+    console.log(`   Commandes: ${existingOrders}`);
+    console.log(`   Commandes de seed: ${seedOrders}\n`);
 
-    // Nettoyer les anciennes données de test (optionnel)
-    const shouldClean = process.argv.includes('--clean');
-    if (shouldClean) {
-      console.log('🧹 Nettoyage des anciennes données...');
-      await Order.deleteMany({});
-      await Visit.deleteMany({});
-      console.log('✅ Données nettoyées\n');
-    } else if (existingVisits > 0 || existingOrders > 0) {
-      console.log('ℹ️  Des données existent déjà. Les nouvelles données seront ajoutées.');
-      console.log('   Utilisez "npm run seed:clean" pour tout nettoyer avant de régénérer.\n');
-    }
+    // Toujours nettoyer les anciennes données de seed
+    console.log('🧹 Nettoyage des anciennes données de seed...');
+    const deletedOrders = await Order.deleteMany({ isSeed: true });
+    const deletedVisits = await Visit.deleteMany({});
+    console.log(`✅ ${deletedOrders.deletedCount} commandes de seed supprimées`);
+    console.log(`✅ ${deletedVisits.deletedCount} visites supprimées\n`);
 
     // Générer des visites pour les 30 derniers jours
     console.log('📊 Génération des visites...');
@@ -73,6 +70,7 @@ async function seedData() {
           referrer: Math.random() > 0.5 ? 'https://google.com' : '',
           userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           ip: `192.168.1.${Math.floor(Math.random() * 255)}`,
+          isSeed: true,
           createdAt: visitDate,
         });
       }
@@ -137,6 +135,7 @@ async function seedData() {
           productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
           productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
           status: getRandomStatus(),
+          isSeed: true,
           createdAt: orderDate,
         });
       }
