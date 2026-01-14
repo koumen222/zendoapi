@@ -35,7 +35,28 @@ app.set("trust proxy", true);
 // ============================================================================
 // CORS MIDDLEWARE MANUEL - AVANT TOUTES LES ROUTES
 // ============================================================================
-const ALLOWED_ORIGIN = "https://b12068c0.zendof.pages.dev";
+const ALLOWED_ORIGINS = [
+  "https://b12068c0.zendof.pages.dev",
+  "https://40060d2a.zendof.pages.dev",
+  "https://zendo.site",
+];
+
+// Fonction pour vérifier si une origine est autorisée
+const isOriginAllowed = (origin) => {
+  if (!origin) return false;
+  
+  // Vérifier les origines exactes
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    return true;
+  }
+  
+  // Autoriser toutes les origines Cloudflare Pages (*.zendof.pages.dev)
+  if (origin.includes('zendof.pages.dev')) {
+    return true;
+  }
+  
+  return false;
+};
 
 // Middleware CORS manuel
 app.use((req, res, next) => {
@@ -43,7 +64,7 @@ app.use((req, res, next) => {
   
   // Gérer les requêtes OPTIONS (preflight)
   if (req.method === 'OPTIONS') {
-    if (origin === ALLOWED_ORIGIN) {
+    if (isOriginAllowed(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
@@ -51,14 +72,17 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Max-Age', '86400');
       return res.status(204).end();
     } else {
+      console.log(`❌ CORS: Blocked preflight from origin: ${origin}`);
       return res.status(403).json({ error: 'CORS: Origin not allowed' });
     }
   }
   
   // Pour toutes les autres requêtes, ajouter les en-têtes CORS si l'origine est autorisée
-  if (origin === ALLOWED_ORIGIN) {
+  if (isOriginAllowed(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (origin) {
+    console.log(`❌ CORS: Blocked request from origin: ${origin}`);
   }
   
   next();
