@@ -1,0 +1,7 @@
+# MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/zendo?retryWrites=true&w=majority
+
+# Autres variables
+ADMIN_KEY=ZENDO_ADMIN_2026
+PORT=3001
+NODE_ENV=development
+```

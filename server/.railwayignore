@@ -1,0 +1,5 @@
+# Railway should only use files in this directory
+# Ignore parent directory files
+../package.json
+../client/
+../client/**
