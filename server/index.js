@@ -7,20 +7,17 @@ import { dirname, join } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Charger .env depuis la racine du projet (seulement en développement local)
-// Sur Railway, les variables d'environnement sont injectées automatiquement
+
 const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT;
 if (!isProduction) {
   const envPath = join(__dirname, "..", ".env");
   const result = dotenv.config({ path: envPath });
 
   if (result.error) {
-    // Only log error if file exists but couldn't be read (not if file doesn't exist)
     if (result.error.code !== 'ENOENT') {
       console.error("⚠️  Erreur lors du chargement du .env:", result.error.message);
       console.error("📁 Chemin recherché:", envPath);
     }
-    // Silently ignore if .env doesn't exist (normal in some environments)
   } else {
     console.log("✅ Fichier .env chargé depuis:", envPath);
     console.log("🔑 Variables chargées:", Object.keys(result.parsed || {}).join(", "));
