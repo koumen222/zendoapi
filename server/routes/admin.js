@@ -750,15 +750,33 @@ router.delete('/orders', checkAdminKey, async (req, res) => {
  */
 router.get('/stats', checkAdminKey, async (req, res) => {
   try {
-    const { days = 30 } = req.query;
+    const { days = 30, startDate: startDateParam, endDate: endDateParam } = req.query;
     const daysNum = parseInt(days);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysNum);
-    startDate.setHours(0, 0, 0, 0);
+
+    let rangeStart;
+    let rangeEnd;
+    let rangeDays;
+
+    if (startDateParam || endDateParam) {
+      const start = startDateParam ? new Date(startDateParam) : new Date(endDateParam);
+      const end = endDateParam ? new Date(endDateParam) : new Date(startDateParam);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      rangeStart = start;
+      rangeEnd = end;
+      rangeDays = Math.max(1, Math.ceil((rangeEnd - rangeStart + 1) / (1000 * 60 * 60 * 24)));
+    } else {
+      rangeEnd = new Date();
+      rangeEnd.setHours(23, 59, 59, 999);
+      rangeStart = new Date(rangeEnd);
+      rangeStart.setDate(rangeStart.getDate() - Math.max(daysNum, 1) + 1);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeDays = Math.max(daysNum, 1);
+    }
 
     // Base filter (exclure les données de seed)
     const baseFilter = {
-      createdAt: { $gte: startDate },
+      createdAt: { $gte: rangeStart, $lte: rangeEnd },
       isSeed: { $ne: true }
     };
 
@@ -836,12 +854,14 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       : 0;
 
     // Calculate previous period for comparison (optimisé)
-    const previousStartDate = new Date(startDate);
-    previousStartDate.setDate(previousStartDate.getDate() - daysNum);
-    const previousEndDate = new Date(startDate);
-    
+    const previousEndDate = new Date(rangeStart);
+    previousEndDate.setMilliseconds(-1);
+    const previousStartDate = new Date(previousEndDate);
+    previousStartDate.setDate(previousStartDate.getDate() - rangeDays + 1);
+    previousStartDate.setHours(0, 0, 0, 0);
+
     const previousFilter = {
-      createdAt: { $gte: previousStartDate, $lt: previousEndDate },
+      createdAt: { $gte: previousStartDate, $lte: previousEndDate },
       isSeed: { $ne: true }
     };
 
@@ -909,17 +929,19 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       ? (((totalOrders - previousOrdersCount) / previousOrdersCount) * 100).toFixed(0)
       : totalOrders > 0 ? 100 : 0;
 
-    // Generate sparkline data (last 20 days) - optimisé avec agrégation
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const sparklineStartDate = new Date(today);
-    sparklineStartDate.setDate(sparklineStartDate.getDate() - 19);
+    // Generate sparkline data (up to 30 days) - optimisé avec agrégation
+    const sparklineDays = Math.min(rangeDays, 30);
+    const sparklineEndDate = new Date(rangeEnd);
+    sparklineEndDate.setHours(23, 59, 59, 999);
+    const sparklineStartDate = new Date(sparklineEndDate);
+    sparklineStartDate.setDate(sparklineStartDate.getDate() - sparklineDays + 1);
+    sparklineStartDate.setHours(0, 0, 0, 0);
 
     const [visitsSparkline, ordersSparkline] = await Promise.all([
       Visit.aggregate([
         {
           $match: {
-            createdAt: { $gte: sparklineStartDate },
+            createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
             isSeed: { $ne: true }
           }
         },
@@ -939,7 +961,7 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       Order.aggregate([
         {
           $match: {
-            createdAt: { $gte: sparklineStartDate },
+            createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
             isSeed: { $ne: true }
           }
         },
@@ -962,11 +984,11 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     const visitsMap = new Map(visitsSparkline.map(item => [item._id, item.count]));
     const ordersMap = new Map(ordersSparkline.map(item => [item._id, item.count]));
 
-    // Générer les données pour les 20 derniers jours
+    // Générer les données pour la période sélectionnée
     const sparklineData = [];
-    for (let i = 19; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+    for (let i = 0; i < sparklineDays; i++) {
+      const date = new Date(sparklineStartDate);
+      date.setDate(date.getDate() + i);
       const dateKey = date.toISOString().split('T')[0];
       
       sparklineData.push({
