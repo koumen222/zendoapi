@@ -22,34 +22,69 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Product data for Hismile (hardcoded)
-    const productData = {
-      productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
-      productPrice: quantity === 1 ? '9,900 FCFA' : '14,000 FCFA',
-      productImages: [],
-      productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
-      productFullDesc: '',
-      productBenefits: [],
-      productUsage: '',
-      productGuarantee: 'Il est recommandé par les dentistes du Cameroun et du monde entier.',
-      productDeliveryInfo: '',
-      productReviews: [],
-    };
+    const normalizedSlug = String(productSlug).trim().toLowerCase();
+    const quantityNumber = parseInt(quantity) || 1;
+    const formatXaf = (value) => `${value.toLocaleString('fr-FR')} FCFA`;
 
-    // Calculer le prix total
+    let productData = {};
     let totalPrice = '';
     let totalPriceValue = 0;
-    
-    if (quantity === 1) {
-      totalPrice = '9,900 FCFA';
-      totalPriceValue = 9900;
-    } else if (quantity === 2) {
-      totalPrice = '14,000 FCFA';
-      totalPriceValue = 14000;
+
+    if (normalizedSlug === 'gumies') {
+      const gumiesOffers = {
+        1: 16000,
+        2: 25000,
+        3: 31000,
+      };
+      const offerValue = gumiesOffers[quantityNumber];
+      if (!offerValue) {
+        return res.status(400).json({
+          success: false,
+          message: 'Quantité invalide pour Gumies (1, 2 ou 3 boites uniquement)',
+        });
+      }
+
+      totalPriceValue = offerValue;
+      totalPrice = formatXaf(offerValue);
+      productData = {
+        productName: 'Gumies',
+        productPrice: totalPrice,
+        productImages: [],
+        productShortDesc: '',
+        productFullDesc: '',
+        productBenefits: [],
+        productUsage: '',
+        productGuarantee: '',
+        productDeliveryInfo: '',
+        productReviews: [],
+      };
     } else {
-      const priceValue = quantity * 9900;
-      totalPrice = `${priceValue.toLocaleString('fr-FR')} FCFA`;
-      totalPriceValue = priceValue;
+      // Product data for Hismile (hardcoded)
+      productData = {
+        productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+        productPrice: quantityNumber === 1 ? '9,900 FCFA' : '14,000 FCFA',
+        productImages: [],
+        productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
+        productFullDesc: '',
+        productBenefits: [],
+        productUsage: '',
+        productGuarantee: 'Il est recommandé par les dentistes du Cameroun et du monde entier.',
+        productDeliveryInfo: '',
+        productReviews: [],
+      };
+
+      // Calculer le prix total
+      if (quantityNumber === 1) {
+        totalPrice = '9,900 FCFA';
+        totalPriceValue = 9900;
+      } else if (quantityNumber === 2) {
+        totalPrice = '14,000 FCFA';
+        totalPriceValue = 14000;
+      } else {
+        const priceValue = quantityNumber * 9900;
+        totalPrice = formatXaf(priceValue);
+        totalPriceValue = priceValue;
+      }
     }
 
     // Create order
@@ -59,7 +94,7 @@ router.post('/', async (req, res) => {
       city: city.trim(),
       address: address.trim(),
       productSlug: productSlug.trim(),
-      quantity: parseInt(quantity) || 1,
+      quantity: quantityNumber,
       totalPrice,
       totalPriceValue, // Ajout de la valeur numérique pour Meta CAPI
       ...productData,
