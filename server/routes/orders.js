@@ -22,6 +22,13 @@ const normalizePhone = (value) => {
   return normalized;
 };
 
+const isValidPhone = (value) => {
+  if (!value) return false;
+  if (!value.startsWith('+')) return false;
+  const digitsOnly = value.slice(1);
+  return /^\d{8,15}$/.test(digitsOnly);
+};
+
 const clampQuantity = (value) => {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return 1;
@@ -53,11 +60,10 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const phoneDigits = safePhone.replace(/\D/g, '');
-    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+    if (!isValidPhone(safePhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Numéro de téléphone invalide',
+        message: 'Numéro de téléphone invalide (format attendu: +XXXXXXXX)',
       });
     }
 
@@ -163,11 +169,13 @@ router.post('/', async (req, res) => {
       phone: order.phone,
       product: order.productName,
       price: totalPrice,
+      quantity: order.quantity,
       city: order.city,
+      address: order.address,
     };
 
     // Envoyer Meta CAPI Purchase en arrière-plan (ne bloque pas la réponse)
-    process.nextTick(async () => {
+    process.nextTick(() => {
       try {
         const xff = req.headers["x-forwarded-for"];
         const ip =
@@ -188,20 +196,24 @@ router.post('/', async (req, res) => {
         console.log('🌐 URL:', frontendUrl);
         console.log('📍 IP:', ip || 'N/A');
 
-        const result = await sendMetaPurchase({
+        sendMetaPurchase({
           ip,
           userAgent: req.headers["user-agent"] || "",
           value: totalPriceValue,
           url: frontendUrl,
           currency: "XAF",
           orderId: order._id.toString(),
-        });
-
-        if (result.success) {
-          console.log('✅ [META-CAPI] Purchase event successfully sent to Meta');
-        } else {
-          console.warn('⚠️  [META-CAPI] Purchase event failed (non-blocking):', result.message || result.error);
-        }
+        })
+          .then((result) => {
+            if (result.success) {
+              console.log('✅ [META-CAPI] Purchase event successfully sent to Meta');
+            } else {
+              console.warn('⚠️  [META-CAPI] Purchase event failed (non-blocking):', result.message || result.error);
+            }
+          })
+          .catch((metaError) => {
+            console.error('❌ [META-CAPI] Unexpected error (non-blocking):', metaError.message);
+          });
       } catch (metaError) {
         console.error('❌ [META-CAPI] Unexpected error (non-blocking):', metaError.message);
       }

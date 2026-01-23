@@ -78,6 +78,14 @@ router.post('/orders', checkAdminKey, async (req, res) => {
       });
     }
 
+    const normalizedPhone = phone.trim();
+    if (!normalizedPhone.startsWith('+') || !/^\+\d{8,15}$/.test(normalizedPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Numéro de téléphone invalide (format attendu: +XXXXXXXX)',
+      });
+    }
+
     // Product data defaults
     const productData = {
       productName: productName || 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
@@ -108,7 +116,7 @@ router.post('/orders', checkAdminKey, async (req, res) => {
     // Create order
     const order = new Order({
       name: name.trim(),
-      phone: phone.trim(),
+      phone: normalizedPhone,
       city: city.trim(),
       address: address ? address.trim() : '',
       productSlug: productSlug.trim(),
@@ -203,16 +211,16 @@ router.get('/orders', checkAdminKey, async (req, res) => {
       ];
     }
 
-    // Optimisation : utiliser lean() et sélectionner uniquement les champs nécessaires
-    const orders = await Order.find(filter)
-      .select('name phone city address productSlug quantity totalPrice productPrice productName productShortDesc status createdAt')
-      .sort(sort)
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
-
-    // Compter le total avec le même filtre
-    const total = await Order.countDocuments(filter);
+    // Optimisation : exécuter la requête et le count en parallèle
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .select('name phone city address productSlug quantity totalPrice productPrice productName productShortDesc status createdAt')
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Order.countDocuments(filter),
+    ]);
 
     res.json({
       success: true,
@@ -356,7 +364,16 @@ router.put('/orders/:id', checkAdminKey, async (req, res) => {
 
     // Mise à jour des champs fournis
     if (name !== undefined) order.name = name.trim();
-    if (phone !== undefined) order.phone = phone.trim();
+    if (phone !== undefined) {
+      const normalizedPhone = phone.trim();
+      if (!normalizedPhone.startsWith('+') || !/^\+\d{8,15}$/.test(normalizedPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Numéro de téléphone invalide (format attendu: +XXXXXXXX)',
+        });
+      }
+      order.phone = normalizedPhone;
+    }
     if (city !== undefined) order.city = city.trim();
     if (address !== undefined) order.address = address.trim();
     if (quantity !== undefined) order.quantity = parseInt(quantity) || 1;
@@ -413,7 +430,7 @@ router.delete('/orders/:id', checkAdminKey, async (req, res) => {
       });
     }
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).lean();
 
     if (!order) {
       console.log('❌ Commande non trouvée:', orderId);
@@ -431,7 +448,7 @@ router.delete('/orders/:id', checkAdminKey, async (req, res) => {
       });
     }
 
-    await Order.findByIdAndDelete(orderId);
+    await Order.deleteOne({ _id: orderId });
     console.log('✅ Commande supprimée avec succès:', orderId);
 
     res.json({

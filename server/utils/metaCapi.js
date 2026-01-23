@@ -88,7 +88,7 @@ export const sendMetaPurchase = async ({
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 10000, // Timeout de 10 secondes (augmenté)
+        timeout: 5000, // Timeout de 5 secondes
       }
     );
 

@@ -22,7 +22,9 @@ const TG_CHAT_IDS = TG_CHAT_IDS_RAW ? TG_CHAT_IDS_RAW.split(',').map(id => id.tr
  * @param {string} orderData.phone - Téléphone du client
  * @param {string} orderData.product - Nom du produit
  * @param {string} orderData.price - Prix de la commande
+ * @param {number} orderData.quantity - Quantité commandée
  * @param {string} orderData.city - Ville du client
+ * @param {string} orderData.address - Adresse du client
  * @returns {Promise<Object>} Réponse de l'API Telegram
  */
 export async function sendTelegramNotification(orderData) {
@@ -50,8 +52,10 @@ export async function sendTelegramNotification(orderData) {
 👤 Nom: ${orderData.name}
 📞 Téléphone: ${orderData.phone}
 📦 Produit: ${orderData.product}
+🔢 Quantité: ${orderData.quantity}
 💰 Prix: ${orderData.price}
-📍 Ville: ${orderData.city}`;
+📍 Ville: ${orderData.city}
+🏠 Adresse: ${orderData.address || 'Non précisée'}`;
 
     // URL de l'API Telegram
     const url = `${TELEGRAM_API_URL}${TG_TOKEN}/sendMessage`;

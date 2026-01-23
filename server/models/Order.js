@@ -117,6 +117,8 @@ orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ phone: 1 });
 orderSchema.index({ city: 1 });
 orderSchema.index({ productSlug: 1 });
+orderSchema.index({ city: 1, createdAt: -1 });
+orderSchema.index({ isSeed: 1, createdAt: -1 });
 
 
 export default mongoose.model('Order', orderSchema);
