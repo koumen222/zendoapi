@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import compression from "compression";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -28,6 +29,7 @@ if (!isProduction) {
 
 const app = express();
 app.set("trust proxy", true);
+app.use(compression());
 
 // ============================================================================
 // CORS MIDDLEWARE MANUEL - AVANT TOUTES LES ROUTES
@@ -37,6 +39,7 @@ const ALLOWED_ORIGINS = [
   "https://40060d2a.zendof.pages.dev",
   "https://zendo.site",
   "https://safiroecommerce.shop",
+  "http://localhost:3000",
 ];
 
 // Fonction pour vérifier si une origine est autorisée

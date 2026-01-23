@@ -5,9 +5,32 @@ import { sendMetaPurchase } from '../utils/metaCapi.js';
 
 const router = express.Router();
 
+const sanitizeText = (value, { maxLen = 120, allowEmpty = false } = {}) => {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  const trimmed = text.trim();
+  if (!trimmed && !allowEmpty) return '';
+  return trimmed.slice(0, maxLen);
+};
+
+const normalizePhone = (value) => {
+  const raw = sanitizeText(value, { maxLen: 32, allowEmpty: true });
+  if (!raw) return '';
+  let normalized = raw.replace(/[^\d+]/g, '');
+  if (normalized.startsWith('00')) {
+    normalized = `+${normalized.slice(2)}`;
+  }
+  return normalized;
+};
+
+const clampQuantity = (value) => {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed)) return 1;
+  return Math.min(Math.max(parsed, 1), 10);
+};
+
 /**
  * POST /api/orders
- * Create a new COD order for Hismile product
+ * Create a new COD order for Zendo products
  */
 router.post('/', async (req, res) => {
   try {
@@ -15,15 +38,29 @@ router.post('/', async (req, res) => {
     const { name, phone, city, address = '', productSlug, quantity = 1 } = req.body;
 
     // Validation
-    if (!name || !phone || !city || !productSlug) {
+    const safeName = sanitizeText(name, { maxLen: 80 });
+    const safeCity = sanitizeText(city, { maxLen: 60 });
+    const safeAddress = sanitizeText(address, { maxLen: 120, allowEmpty: true });
+    const safePhone = normalizePhone(phone);
+    const normalizedSlug = sanitizeText(productSlug, { maxLen: 30, allowEmpty: true })
+      .toLowerCase() || 'hismile';
+    const quantityNumber = clampQuantity(quantity);
+
+    if (!safeName || !safeCity || !safePhone) {
       return res.status(400).json({
         success: false,
-        message: 'Tous les champs sont requis (name, phone, city, productSlug)',
+        message: 'Les champs nom, téléphone et ville sont requis',
       });
     }
 
-    const normalizedSlug = String(productSlug).trim().toLowerCase();
-    const quantityNumber = parseInt(quantity) || 1;
+    const phoneDigits = safePhone.replace(/\D/g, '');
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+      return res.status(400).json({
+        success: false,
+        message: 'Numéro de téléphone invalide',
+      });
+    }
+
     const formatXaf = (value) => `${value.toLocaleString('fr-FR')} FCFA`;
 
     let productData = {};
@@ -59,9 +96,11 @@ router.post('/', async (req, res) => {
         productReviews: [],
       };
     } else {
-      // Product data for Hismile (hardcoded)
+      // Product data for Hismile and BBL (hardcoded)
       productData = {
-        productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+        productName: normalizedSlug === 'bbl'
+          ? 'BBL'
+          : 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
         productPrice: quantityNumber === 1 ? '9,900 FCFA' : '14,000 FCFA',
         productImages: [],
         productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
@@ -89,11 +128,11 @@ router.post('/', async (req, res) => {
 
     // Create order
     const order = new Order({
-      name: name.trim(),
-      phone: phone.trim(),
-      city: city.trim(),
-      address: address.trim(),
-      productSlug: productSlug.trim(),
+      name: safeName,
+      phone: safePhone,
+      city: safeCity,
+      address: safeAddress,
+      productSlug: normalizedSlug,
       quantity: quantityNumber,
       totalPrice,
       totalPriceValue, // Ajout de la valeur numérique pour Meta CAPI

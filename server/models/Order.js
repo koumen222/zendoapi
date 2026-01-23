@@ -39,6 +39,11 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    totalPriceValue: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     productName: {
       type: String,
       default: '',
@@ -106,6 +111,12 @@ const orderSchema = new mongoose.Schema(
   
 )
 ;
+
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ phone: 1 });
+orderSchema.index({ city: 1 });
+orderSchema.index({ productSlug: 1 });
 
 
 export default mongoose.model('Order', orderSchema);
