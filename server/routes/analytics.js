@@ -11,7 +11,9 @@ router.post('/track-visit', async (req, res) => {
   try {
     const { path, referrer, userAgent } = req.body;
     const xff = req.headers["x-forwarded-for"];
+    const cfIp = req.headers["cf-connecting-ip"];
     const ip =
+      (typeof cfIp === "string" && cfIp.trim()) ||
       (typeof xff === "string" ? xff.split(",")[0].trim() : "") ||
       req.ip ||
       req.connection?.remoteAddress ||

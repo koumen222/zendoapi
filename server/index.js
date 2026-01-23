@@ -39,6 +39,7 @@ const ALLOWED_ORIGINS = [
   "https://40060d2a.zendof.pages.dev",
   "https://zendo.site",
   "https://safiroecommerce.shop",
+  "https://www.safiroecommerce.shop",
   "http://localhost:3000",
 ];
 
@@ -53,6 +54,11 @@ const isOriginAllowed = (origin) => {
   
   // Autoriser toutes les origines Cloudflare Pages (*.zendof.pages.dev)
   if (origin.includes('zendof.pages.dev')) {
+    return true;
+  }
+
+  // Autoriser tous les sous-domaines safiroecommerce.shop
+  if (origin.endsWith('.safiroecommerce.shop')) {
     return true;
   }
   

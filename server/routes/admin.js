@@ -1,6 +1,8 @@
 import express from 'express';
 import Order from '../models/Order.js';
 import Visit from '../models/Visit.js';
+import CloudflareVisit from '../models/CloudflareVisit.js';
+import { fetchDailyVisits, fetchMinuteVisits } from '../utils/cloudflareAnalytics.js';
 
 const router = express.Router();
 
@@ -19,6 +21,46 @@ const checkAdminKey = (req, res, next) => {
   }
 
   next();
+};
+
+const formatDateOnly = (date) => date.toISOString().split('T')[0];
+
+const getCloudflareVisitTotal = async (rangeStart, rangeEnd) => {
+  const match = {
+    source: 'daily',
+    bucketStart: { $gte: rangeStart, $lte: rangeEnd },
+  };
+  const hasData = await CloudflareVisit.countDocuments(match);
+  if (!hasData) return null;
+  const totals = await CloudflareVisit.aggregate([
+    { $match: match },
+    { $group: { _id: null, total: { $sum: '$count' } } },
+  ]);
+  return totals[0]?.total || 0;
+};
+
+const getCloudflareSparkline = async (rangeStart, rangeEnd, days) => {
+  const match = {
+    source: 'daily',
+    bucketStart: { $gte: rangeStart, $lte: rangeEnd },
+  };
+  const docs = await CloudflareVisit.find(match).select('bucketStart count bucket').lean();
+  if (!docs.length) return null;
+
+  const byDate = new Map();
+  docs.forEach((doc) => {
+    const key = doc.bucket || formatDateOnly(new Date(doc.bucketStart));
+    byDate.set(key, (byDate.get(key) || 0) + (doc.count || 0));
+  });
+
+  const sparkline = [];
+  for (let i = 0; i < days; i += 1) {
+    const day = new Date(rangeStart);
+    day.setDate(rangeStart.getDate() + i);
+    const key = formatDateOnly(day);
+    sparkline.push(byDate.get(key) || 0);
+  }
+  return sparkline;
 };
 
 /**
@@ -762,6 +804,185 @@ router.delete('/orders', checkAdminKey, async (req, res) => {
 });
 
 /**
+ * POST /api/admin/analytics/cloudflare/import
+ * Import historical visits from Cloudflare Analytics API
+ */
+router.post('/analytics/cloudflare/import', checkAdminKey, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'startDate et endDate sont requis',
+      });
+    }
+
+    const visits = await fetchDailyVisits({ startDate, endDate });
+    if (!visits.length) {
+      return res.json({
+        success: true,
+        imported: 0,
+        updated: 0,
+        message: 'Aucune donnée Cloudflare pour cette période',
+      });
+    }
+
+    const operations = visits.map((visit) => ({
+      updateOne: {
+        filter: {
+          zoneId: visit.zoneId,
+          source: 'daily',
+          bucketStart: visit.bucketStart,
+        },
+        update: {
+          $set: {
+            bucket: visit.bucket,
+            count: visit.count,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await CloudflareVisit.bulkWrite(operations, { ordered: false });
+    res.json({
+      success: true,
+      imported: result.upsertedCount || 0,
+      updated: result.modifiedCount || 0,
+      total: visits.length,
+    });
+  } catch (error) {
+    console.error('Cloudflare import error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de l’import Cloudflare',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/analytics/cloudflare/sync
+ * Sync recent minute-level visits from Cloudflare Analytics API
+ */
+router.post('/analytics/cloudflare/sync', checkAdminKey, async (req, res) => {
+  try {
+    const minutes = Math.min(Math.max(parseInt(req.body?.minutes, 10) || 60, 1), 1440);
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - minutes * 60 * 1000);
+
+    const visits = await fetchMinuteVisits({ startDate, endDate });
+    if (!visits.length) {
+      return res.json({
+        success: true,
+        imported: 0,
+        updated: 0,
+        message: 'Aucune donnée minute disponible',
+      });
+    }
+
+    const operations = visits.map((visit) => ({
+      updateOne: {
+        filter: {
+          zoneId: visit.zoneId,
+          source: 'minute',
+          bucketStart: visit.bucketStart,
+        },
+        update: {
+          $set: {
+            bucket: visit.bucket,
+            count: visit.count,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await CloudflareVisit.bulkWrite(operations, { ordered: false });
+    res.json({
+      success: true,
+      imported: result.upsertedCount || 0,
+      updated: result.modifiedCount || 0,
+      total: visits.length,
+    });
+  } catch (error) {
+    console.error('Cloudflare sync error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la synchronisation Cloudflare',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/analytics/cloudflare/status
+ * Get Cloudflare import/sync status
+ */
+router.get('/analytics/cloudflare/status', checkAdminKey, async (req, res) => {
+  try {
+    const [lastDaily, lastMinute, totalDaily, totalMinute] = await Promise.all([
+      CloudflareVisit.findOne({ source: 'daily' }).sort({ bucketStart: -1 }).lean(),
+      CloudflareVisit.findOne({ source: 'minute' }).sort({ bucketStart: -1 }).lean(),
+      CloudflareVisit.countDocuments({ source: 'daily' }),
+      CloudflareVisit.countDocuments({ source: 'minute' }),
+    ]);
+
+    res.json({
+      success: true,
+      lastDailyAt: lastDaily?.bucketStart || null,
+      lastMinuteAt: lastMinute?.bucketStart || null,
+      totals: {
+        daily: totalDaily,
+        minute: totalMinute,
+      },
+    });
+  } catch (error) {
+    console.error('Cloudflare status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération du statut Cloudflare',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/analytics/cloudflare/live
+ * Get live visits from stored minute buckets
+ */
+router.get('/analytics/cloudflare/live', checkAdminKey, async (req, res) => {
+  try {
+    const minutes = Math.min(Math.max(parseInt(req.query?.minutes, 10) || 5, 1), 60);
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - minutes * 60 * 1000);
+    const totals = await CloudflareVisit.aggregate([
+      {
+        $match: {
+          source: 'minute',
+          bucketStart: { $gte: startDate, $lte: endDate },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$count' } } },
+    ]);
+
+    res.json({
+      success: true,
+      minutes,
+      total: totals[0]?.total || 0,
+      since: startDate,
+    });
+  } catch (error) {
+    console.error('Cloudflare live error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des visites live',
+      error: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/admin/stats
  * Get dashboard statistics (admin only)
  */
@@ -797,8 +1018,11 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       isSeed: { $ne: true }
     };
 
-    // Calculate visits for the period (optimisé)
-    const visitsInRange = await Visit.countDocuments(baseFilter);
+    // Calculate visits for the period (Cloudflare if available)
+    const cloudflareVisitsInRange = await getCloudflareVisitTotal(rangeStart, rangeEnd);
+    const visitsInRange = cloudflareVisitsInRange !== null
+      ? cloudflareVisitsInRange
+      : await Visit.countDocuments(baseFilter);
 
     // Optimisation : utiliser des agrégations MongoDB pour calculer les stats
     const ordersStats = await Order.aggregate([
@@ -882,9 +1106,7 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       isSeed: { $ne: true }
     };
 
-    const [previousVisits, previousOrdersStats] = await Promise.all([
-      Visit.countDocuments(previousFilter),
-      Order.aggregate([
+    const previousOrdersStats = await Order.aggregate([
         { $match: previousFilter },
         {
           $group: {
@@ -922,8 +1144,12 @@ router.get('/stats', checkAdminKey, async (req, res) => {
             revenue: 1
           }
         }
-      ])
-    ]);
+      ]);
+
+    let previousVisits = await getCloudflareVisitTotal(previousStartDate, previousEndDate);
+    if (previousVisits === null) {
+      previousVisits = await Visit.countDocuments(previousFilter);
+    }
 
     const previousStats = previousOrdersStats[0] || {
       totalOrders: 0,
@@ -954,27 +1180,36 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     sparklineStartDate.setDate(sparklineStartDate.getDate() - sparklineDays + 1);
     sparklineStartDate.setHours(0, 0, 0, 0);
 
+    const cloudflareSparkline = await getCloudflareSparkline(sparklineStartDate, sparklineEndDate, sparklineDays);
     const [visitsSparkline, ordersSparkline] = await Promise.all([
-      Visit.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
-            isSeed: { $ne: true }
-          }
-        },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$createdAt'
+      cloudflareSparkline
+        ? Promise.resolve(
+            cloudflareSparkline.map((count, index) => {
+              const day = new Date(sparklineStartDate);
+              day.setDate(day.getDate() + index);
+              return { _id: formatDateOnly(day), count };
+            })
+          )
+        : Visit.aggregate([
+            {
+              $match: {
+                createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
+                isSeed: { $ne: true }
               }
             },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { _id: 1 } }
-      ]),
+            {
+              $group: {
+                _id: {
+                  $dateToString: {
+                    format: '%Y-%m-%d',
+                    date: '$createdAt'
+                  }
+                },
+                count: { $sum: 1 }
+              }
+            },
+            { $sort: { _id: 1 } }
+          ]),
       Order.aggregate([
         {
           $match: {
