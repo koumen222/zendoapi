@@ -8,32 +8,37 @@ import { dirname, join } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+/**
+ * ENV
+ */
+const isProduction =
+  process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT;
 
-const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT;
 if (!isProduction) {
   const envPath = join(__dirname, "..", ".env");
   const result = dotenv.config({ path: envPath });
 
   if (result.error) {
-    if (result.error.code !== 'ENOENT') {
-      console.error("⚠️  Erreur lors du chargement du .env:", result.error.message);
-      console.error("📁 Chemin recherché:", envPath);
+    if (result.error.code !== "ENOENT") {
+      console.error("⚠️ Erreur chargement .env:", result.error.message);
     }
   } else {
-    console.log("✅ Fichier .env chargé depuis:", envPath);
-    console.log("🔑 Variables chargées:", Object.keys(result.parsed || {}).join(", "));
+    console.log("✅ .env chargé:", envPath);
   }
 } else {
-  console.log("🌐 Mode production - Variables d'environnement depuis Railway");
+  console.log("🌐 Mode production (Railway)");
 }
 
 const app = express();
 app.set("trust proxy", true);
 app.use(compression());
 
-// ============================================================================
-// CORS MIDDLEWARE MANUEL - AVANT TOUTES LES ROUTES
-// ============================================================================
+/**
+ * ============================================================================
+ * CORS — VERSION PRO, STABLE, CLOUDFARE COMPATIBLE
+ * ============================================================================
+ */
+
 const ALLOWED_ORIGINS = [
   "https://b12068c0.zendof.pages.dev",
   "https://40060d2a.zendof.pages.dev",
@@ -41,62 +46,69 @@ const ALLOWED_ORIGINS = [
   "https://safiroecommerce.shop",
   "https://www.safiroecommerce.shop",
   "http://localhost:3000",
+  "http://localhost:5173",
 ];
 
-// Fonction pour vérifier si une origine est autorisée
+// Vérification d’origine
 const isOriginAllowed = (origin) => {
-  if (!origin) return false;
-  
-  // Vérifier les origines exactes
+  if (!origin) return true; // Postman / server-to-server
+
+  // Origines exactes
   if (ALLOWED_ORIGINS.includes(origin)) {
     return true;
   }
-  
-  // Autoriser toutes les origines Cloudflare Pages (*.zendof.pages.dev)
-  if (origin.includes('zendof.pages.dev')) {
+
+  // Cloudflare Pages → TOUS les sous-domaines
+  if (origin.endsWith(".pages.dev")) {
     return true;
   }
 
-  // Autoriser tous les sous-domaines safiroecommerce.shop
-  if (origin.endsWith('.safiroecommerce.shop')) {
+  // Sous-domaines safiroecommerce.shop
+  if (origin.endsWith(".safiroecommerce.shop")) {
     return true;
   }
-  
+
   return false;
 };
 
-// Middleware CORS manuel
+// Middleware CORS GLOBAL
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  
-  // Gérer les requêtes OPTIONS (preflight)
-  if (req.method === 'OPTIONS') {
+
+  // PREFLIGHT — TOUJOURS RÉPONDRE
+  if (req.method === "OPTIONS") {
     if (isOriginAllowed(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Access-Control-Max-Age', '86400');
-      return res.status(204).end();
-    } else {
-      console.log(`❌ CORS: Blocked preflight from origin: ${origin}`);
-      return res.status(403).json({ error: 'CORS: Origin not allowed' });
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Admin-Key"
+      );
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Max-Age", "86400");
     }
+    return res.status(204).end();
   }
-  
-  // Pour toutes les autres requêtes, ajouter les en-têtes CORS si l'origine est autorisée
+
+  // REQUÊTES NORMALES
   if (isOriginAllowed(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else if (origin) {
-    console.log(`❌ CORS: Blocked request from origin: ${origin}`);
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
-  
+
   next();
 });
 
 app.use(express.json({ limit: "1mb" }));
 
+/**
+ * ============================================================================
+ * ROUTES
+ * ============================================================================
+ */
 import orderRoutes from "./routes/orders.js";
 import adminRoutes from "./routes/admin.js";
 import productRoutes from "./routes/products.js";
@@ -107,34 +119,42 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
-// Health check
+/**
+ * HEALTH CHECK
+ */
 app.get("/api/health", (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
-  
-  res.json({ 
-    status: "OK", 
+  const dbStatus =
+    mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+
+  res.json({
+    status: "OK",
     message: "Zendo COD API is running",
     database: dbStatus,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
+/**
+ * ============================================================================
+ * SERVER + DATABASE
+ * ============================================================================
+ */
+
 const PORT = process.env.PORT || 5000;
 
-// Validation de MONGO_URI
 if (!process.env.MONGO_URI) {
-  console.error("❌ ERREUR: MONGO_URI n'est pas défini dans le fichier .env");
-  console.error("📝 Créez un fichier .env à la racine du projet avec:");
-  console.error("   MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/zendo");
+  console.error("❌ ERREUR: MONGO_URI manquant");
   process.exit(1);
 }
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connecté");
     app.listen(PORT, () => {
       console.log("🚀 Server running on port", PORT);
     });
   })
-  .catch(err => console.error("❌ MongoDB error:", err));
-
+  .catch((err) => {
+    console.error("❌ MongoDB error:", err.message);
+  });
