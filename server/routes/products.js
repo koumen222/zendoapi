@@ -1,37 +1,51 @@
 import express from 'express';
-import { scrapeProduct } from '../utils/scraper.js';
 
 const router = express.Router();
 
 /**
- * GET /api/products/:slug
- * Get product data by scraping
+ * SOURCE UNIQUE DE VÉRITÉ (PRODUITS)
  */
-router.get('/:slug', async (req, res) => {
-  try {
-    const { slug } = req.params;
+const PRODUCTS = {
+  hismile: {
+    slug: 'hismile',
+    productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+    price: '9,900 FCFA',
+    images: [],
+    shortDesc:
+      'Sérum correcteur de teinte pour les dents. Effet immédiat, sans peroxyde.',
+    fullDesc:
+      'Hismile est un sérum dentaire innovant qui corrige la teinte des dents dès la première utilisation.',
+    benefits: [
+      'Résultat immédiat',
+      'Sans peroxyde',
+      'Sans douleur',
+      'Recommandé par les dentistes',
+    ],
+    usage: 'Appliquer sur les dents propres.',
+  },
+};
 
-    if (!slug) {
-      return res.status(400).json({
-        success: false,
-        message: 'Slug produit requis',
-      });
-    }
+/**
+ * GET /api/products/:slug
+ * ⚠️ JAMAIS DE SCRAPER ICI
+ */
+router.get('/:slug', (req, res) => {
+  const { slug } = req.params;
 
-    const productData = await scrapeProduct(slug);
+  const product = PRODUCTS[slug];
 
-    res.json({
-      success: true,
-      product: productData,
-    });
-  } catch (error) {
-    console.error('Product fetch error:', error);
-    res.status(500).json({
+  if (!product) {
+    return res.status(404).json({
       success: false,
-      message: 'Erreur lors de la récupération du produit',
-      error: error.message,
+      message: 'Produit introuvable',
     });
   }
+
+  res.json({
+    success: true,
+    product,
+    source: 'static',
+  });
 });
 
 export default router;
