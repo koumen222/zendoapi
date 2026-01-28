@@ -67,6 +67,8 @@ router.post('/', async (req, res) => {
       });
     }
 
+    const normalizedSlug = String(productSlug).trim().toLowerCase();
+    const quantityNumber = parseInt(quantity) || 1;
     const formatXaf = (value) => `${value.toLocaleString('fr-FR')} FCFA`;
 
     let productData = {};
@@ -102,11 +104,9 @@ router.post('/', async (req, res) => {
         productReviews: [],
       };
     } else {
-      // Product data for Hismile and BBL (hardcoded)
+      // Product data for Hismile (hardcoded)
       productData = {
-        productName: normalizedSlug === 'bbl'
-          ? 'BBL'
-          : 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+        productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
         productPrice: quantityNumber === 1 ? '9,900 FCFA' : '14,000 FCFA',
         productImages: [],
         productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
@@ -118,27 +118,29 @@ router.post('/', async (req, res) => {
         productReviews: [],
       };
 
-      // Calculer le prix total
-      if (quantityNumber === 1) {
-        totalPrice = '9,900 FCFA';
-        totalPriceValue = 9900;
-      } else if (quantityNumber === 2) {
-        totalPrice = '14,000 FCFA';
-        totalPriceValue = 14000;
-      } else {
-        const priceValue = quantityNumber * 9900;
-        totalPrice = formatXaf(priceValue);
-        totalPriceValue = priceValue;
-      }
+    // Calculer le prix total
+    let totalPrice = '';
+    let totalPriceValue = 0;
+    
+    if (quantity === 1) {
+      totalPrice = '9,900 FCFA';
+      totalPriceValue = 9900;
+    } else if (quantity === 2) {
+      totalPrice = '14,000 FCFA';
+      totalPriceValue = 14000;
+    } else {
+      const priceValue = quantity * 9900;
+      totalPrice = `${priceValue.toLocaleString('fr-FR')} FCFA`;
+      totalPriceValue = priceValue;
     }
 
     // Create order
     const order = new Order({
-      name: safeName,
-      phone: safePhone,
-      city: safeCity,
-      address: safeAddress,
-      productSlug: normalizedSlug,
+      name: name.trim(),
+      phone: phone.trim(),
+      city: city.trim(),
+      address: address.trim(),
+      productSlug: productSlug.trim(),
       quantity: quantityNumber,
       totalPrice,
       totalPriceValue, // Ajout de la valeur numérique pour Meta CAPI
