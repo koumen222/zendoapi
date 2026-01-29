@@ -1235,46 +1235,54 @@ router.get('/stats', checkAdminKey, async (req, res) => {
               return { _id: formatDateOnly(day), count };
             })
           )
-        : Visit.aggregate([
-            {
-              $match: {
-                createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
-                ...(includeSeedData ? {} : { isSeed: { $ne: true } })
-              }
-            },
-            {
-              $group: {
-                _id: {
-                  $dateToString: {
-                    format: '%Y-%m-%d',
-                    date: '$createdAt'
-                  }
-                },
-                count: { $sum: 1 }
-              }
-            },
-            { $sort: { _id: 1 } }
-          ]);
-        })(),
-      Order.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
-            ...(includeSeedData ? {} : { isSeed: { $ne: true } })
-          }
-        },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$createdAt'
-              }
-            },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { _id: 1 } }
+        : (() => {
+            const visitMatchFilter = {
+              createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate }
+            };
+            if (!includeSeedData) {
+              visitMatchFilter.isSeed = { $ne: true };
+            }
+            return Visit.aggregate([
+              {
+                $match: visitMatchFilter
+              },
+              {
+                $group: {
+                  _id: {
+                    $dateToString: {
+                      format: '%Y-%m-%d',
+                      date: '$createdAt'
+                    }
+                  },
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { _id: 1 } }
+            ]);
+          })(),
+      (() => {
+        const orderMatchFilter = {
+          createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate }
+        };
+        if (!includeSeedData) {
+          orderMatchFilter.isSeed = { $ne: true };
+        }
+        return Order.aggregate([
+          {
+            $match: orderMatchFilter
+          },
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$createdAt'
+                }
+              },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { _id: 1 } }
         ]);
       })()
     ]);
