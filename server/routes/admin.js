@@ -988,14 +988,20 @@ router.get('/analytics/cloudflare/live', checkAdminKey, async (req, res) => {
  */
 router.get('/stats', checkAdminKey, async (req, res) => {
   try {
-    const { days = 30, startDate: startDateParam, endDate: endDateParam } = req.query;
+    const { days = 30, startDate: startDateParam, endDate: endDateParam, all } = req.query;
     const daysNum = parseInt(days);
+    const showAll = all === 'true' || all === '1' || days === 'all';
 
     let rangeStart;
     let rangeEnd;
     let rangeDays;
 
-    if (startDateParam || endDateParam) {
+    if (showAll) {
+      // Charger toutes les commandes sans filtre de date
+      rangeStart = null;
+      rangeEnd = null;
+      rangeDays = 365;
+    } else if (startDateParam || endDateParam) {
       const start = startDateParam ? new Date(startDateParam) : new Date(endDateParam);
       const end = endDateParam ? new Date(endDateParam) : new Date(startDateParam);
       start.setHours(0, 0, 0, 0);
@@ -1014,15 +1020,25 @@ router.get('/stats', checkAdminKey, async (req, res) => {
 
     // Base filter (exclure les données de seed)
     const baseFilter = {
-      createdAt: { $gte: rangeStart, $lte: rangeEnd },
       isSeed: { $ne: true }
     };
+    
+    // Ajouter le filtre de date seulement si on ne charge pas tout
+    if (!showAll && rangeStart && rangeEnd) {
+      baseFilter.createdAt = { $gte: rangeStart, $lte: rangeEnd };
+    }
 
     // Calculate visits for the period (Cloudflare if available)
-    const cloudflareVisitsInRange = await getCloudflareVisitTotal(rangeStart, rangeEnd);
-    const visitsInRange = cloudflareVisitsInRange !== null
-      ? cloudflareVisitsInRange
-      : await Visit.countDocuments(baseFilter);
+    let visitsInRange = 0;
+    if (showAll) {
+      // Pour "all", compter toutes les visites sans filtre de date
+      visitsInRange = await Visit.countDocuments({ isSeed: { $ne: true } });
+    } else {
+      const cloudflareVisitsInRange = await getCloudflareVisitTotal(rangeStart, rangeEnd);
+      visitsInRange = cloudflareVisitsInRange !== null
+        ? cloudflareVisitsInRange
+        : await Visit.countDocuments(baseFilter);
+    }
 
     // Optimisation : utiliser des agrégations MongoDB pour calculer les stats
     const ordersStats = await Order.aggregate([
@@ -1095,18 +1111,24 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       : 0;
 
     // Calculate previous period for comparison (optimisé)
-    const previousEndDate = new Date(rangeStart);
-    previousEndDate.setMilliseconds(-1);
-    const previousStartDate = new Date(previousEndDate);
-    previousStartDate.setDate(previousStartDate.getDate() - rangeDays + 1);
-    previousStartDate.setHours(0, 0, 0, 0);
+    let previousFilter = { isSeed: { $ne: true } };
+    let previousVisits = 0;
+    
+    if (!showAll && rangeStart && rangeEnd) {
+      const previousEndDate = new Date(rangeStart);
+      previousEndDate.setMilliseconds(-1);
+      const previousStartDate = new Date(previousEndDate);
+      previousStartDate.setDate(previousStartDate.getDate() - rangeDays + 1);
+      previousStartDate.setHours(0, 0, 0, 0);
+      previousFilter.createdAt = { $gte: previousStartDate, $lte: previousEndDate };
+      
+      previousVisits = await getCloudflareVisitTotal(previousStartDate, previousEndDate);
+      if (previousVisits === null) {
+        previousVisits = await Visit.countDocuments(previousFilter);
+      }
+    }
 
-    const previousFilter = {
-      createdAt: { $gte: previousStartDate, $lte: previousEndDate },
-      isSeed: { $ne: true }
-    };
-
-    const previousOrdersStats = await Order.aggregate([
+    const previousOrdersStats = showAll ? [] : await Order.aggregate([
         { $match: previousFilter },
         {
           $group: {
@@ -1146,10 +1168,6 @@ router.get('/stats', checkAdminKey, async (req, res) => {
         }
       ]);
 
-    let previousVisits = await getCloudflareVisitTotal(previousStartDate, previousEndDate);
-    if (previousVisits === null) {
-      previousVisits = await Visit.countDocuments(previousFilter);
-    }
 
     const previousStats = previousOrdersStats[0] || {
       totalOrders: 0,
@@ -1159,24 +1177,24 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     const previousRevenue = previousStats.revenue;
     const previousOrdersCount = previousStats.totalOrders;
 
-    // Calculate percentage changes
-    const visitsChange = previousVisits > 0 
+    // Calculate percentage changes (skip if showing all)
+    const visitsChange = showAll ? 0 : (previousVisits > 0 
       ? (((visitsInRange - previousVisits) / previousVisits) * 100).toFixed(0)
-      : visitsInRange > 0 ? 100 : 0;
+      : visitsInRange > 0 ? 100 : 0);
 
-    const revenueChange = previousRevenue > 0
+    const revenueChange = showAll ? 0 : (previousRevenue > 0
       ? (((totalRevenue - previousRevenue) / previousRevenue) * 100).toFixed(0)
-      : totalRevenue > 0 ? 100 : 0;
+      : totalRevenue > 0 ? 100 : 0);
 
-    const ordersChange = previousOrdersCount > 0
+    const ordersChange = showAll ? 0 : (previousOrdersCount > 0
       ? (((totalOrders - previousOrdersCount) / previousOrdersCount) * 100).toFixed(0)
-      : totalOrders > 0 ? 100 : 0;
+      : totalOrders > 0 ? 100 : 0);
 
     // Generate sparkline data (up to 30 days) - optimisé avec agrégation
-    const sparklineDays = Math.min(rangeDays, 30);
-    const sparklineEndDate = new Date(rangeEnd);
+    let sparklineDays = Math.min(rangeDays, 30);
+    let sparklineEndDate = showAll ? new Date() : new Date(rangeEnd);
     sparklineEndDate.setHours(23, 59, 59, 999);
-    const sparklineStartDate = new Date(sparklineEndDate);
+    let sparklineStartDate = new Date(sparklineEndDate);
     sparklineStartDate.setDate(sparklineStartDate.getDate() - sparklineDays + 1);
     sparklineStartDate.setHours(0, 0, 0, 0);
 
