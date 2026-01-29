@@ -14,6 +14,13 @@ const __dirname = dirname(__filename);
 const isProduction =
   process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT;
 
+if (isProduction) {
+  const noop = () => {};
+  console.log = noop; // Désactiver les logs en production (perf + bruit)
+  console.info = noop;
+  console.debug = noop;
+}
+
 if (!isProduction) {
   const envPath = join(__dirname, "..", ".env");
   const result = dotenv.config({ path: envPath });
@@ -120,6 +127,25 @@ app.use("/api/products", productRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
 /**
+ * ============================================================================
+ * ERROR HANDLING (log erreurs backend)
+ * ============================================================================
+ */
+app.use((err, req, res, next) => {
+  console.error("❌ API error:", {
+    message: err?.message,
+    path: req?.originalUrl,
+    method: req?.method,
+    status: err?.status || 500,
+  });
+
+  res.status(err?.status || 500).json({
+    success: false,
+    message: "Erreur interne du serveur",
+  });
+});
+
+/**
  * HEALTH CHECK
  */
 app.get("/api/health", (req, res) => {
@@ -146,6 +172,14 @@ if (!process.env.MONGO_URI) {
   console.error("❌ ERREUR: MONGO_URI manquant");
   process.exit(1);
 }
+
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ Unhandled Rejection:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("❌ Uncaught Exception:", error);
+});
 
 mongoose
   .connect(process.env.MONGO_URI)

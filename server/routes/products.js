@@ -1,6 +1,8 @@
 import express from 'express';
 
 const router = express.Router();
+const isProduction =
+  process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT;
 
 /**
  * SOURCE UNIQUE DE VÉRITÉ (PRODUITS)
@@ -39,6 +41,14 @@ router.get('/:slug', (req, res) => {
       success: false,
       message: 'Produit introuvable',
     });
+  }
+
+  if (isProduction) {
+    // Cache agressif côté CDN/navigateur pour contenu statique
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=300, s-maxage=600, stale-while-revalidate=600"
+    );
   }
 
   res.json({
