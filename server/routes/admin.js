@@ -988,9 +988,10 @@ router.get('/analytics/cloudflare/live', checkAdminKey, async (req, res) => {
  */
 router.get('/stats', checkAdminKey, async (req, res) => {
   try {
-    const { days = 30, startDate: startDateParam, endDate: endDateParam, all } = req.query;
+    const { days = 30, startDate: startDateParam, endDate: endDateParam, all, includeSeed } = req.query;
     const daysNum = parseInt(days);
     const showAll = all === 'true' || all === '1' || days === 'all';
+    const includeSeedData = includeSeed === 'true' || includeSeed === '1';
 
     let rangeStart;
     let rangeEnd;
@@ -1018,26 +1019,44 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       rangeDays = Math.max(daysNum, 1);
     }
 
-    // Base filter (exclure les données de seed)
-    const baseFilter = {
-      isSeed: { $ne: true }
-    };
+    // Base filter (exclure les données de seed sauf si includeSeed=true)
+    const baseFilter = includeSeedData ? {} : { isSeed: { $ne: true } };
     
     // Ajouter le filtre de date seulement si on ne charge pas tout
     if (!showAll && rangeStart && rangeEnd) {
       baseFilter.createdAt = { $gte: rangeStart, $lte: rangeEnd };
     }
 
+    // Debug: compter toutes les commandes (avec et sans seed)
+    const totalOrdersInDB = await Order.countDocuments({});
+    const ordersWithoutSeed = await Order.countDocuments({ isSeed: { $ne: true } });
+    const ordersWithSeed = await Order.countDocuments({ isSeed: true });
+    console.log('📊 [STATS] Commandes dans la BD:', {
+      total: totalOrdersInDB,
+      sansSeed: ordersWithoutSeed,
+      avecSeed: ordersWithSeed,
+      showAll,
+      filter: baseFilter,
+    });
+
     // Calculate visits for the period (Cloudflare if available)
     let visitsInRange = 0;
+    const visitsFilter = {
+      $or: [
+        { isSeed: { $exists: false } },
+        { isSeed: false },
+        { isSeed: { $ne: true } }
+      ]
+    };
     if (showAll) {
       // Pour "all", compter toutes les visites sans filtre de date
-      visitsInRange = await Visit.countDocuments({ isSeed: { $ne: true } });
+      visitsInRange = await Visit.countDocuments(visitsFilter);
     } else {
+      visitsFilter.createdAt = { $gte: rangeStart, $lte: rangeEnd };
       const cloudflareVisitsInRange = await getCloudflareVisitTotal(rangeStart, rangeEnd);
       visitsInRange = cloudflareVisitsInRange !== null
         ? cloudflareVisitsInRange
-        : await Visit.countDocuments(baseFilter);
+        : await Visit.countDocuments(visitsFilter);
     }
 
     // Optimisation : utiliser des agrégations MongoDB pour calculer les stats
@@ -1105,13 +1124,21 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     const totalRevenue = stats.revenue;
     const uniqueCustomers = stats.uniqueCustomers;
 
+    console.log('📊 [STATS] Résultats agrégation:', {
+      totalOrders,
+      pendingOrders,
+      totalRevenue,
+      uniqueCustomers,
+      visitsInRange,
+    });
+
     // Calculate conversion rate
     const conversionRate = visitsInRange > 0 
       ? ((totalOrders / visitsInRange) * 100).toFixed(1) 
       : 0;
 
     // Calculate previous period for comparison (optimisé)
-    let previousFilter = { isSeed: { $ne: true } };
+    let previousFilter = includeSeedData ? {} : { isSeed: { $ne: true } };
     let previousVisits = 0;
     
     if (!showAll && rangeStart && rangeEnd) {
@@ -1212,7 +1239,7 @@ router.get('/stats', checkAdminKey, async (req, res) => {
             {
               $match: {
                 createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
-                isSeed: { $ne: true }
+                ...(includeSeedData ? {} : { isSeed: { $ne: true } })
               }
             },
             {
@@ -1227,12 +1254,13 @@ router.get('/stats', checkAdminKey, async (req, res) => {
               }
             },
             { $sort: { _id: 1 } }
-          ]),
+          ]);
+        })(),
       Order.aggregate([
         {
           $match: {
             createdAt: { $gte: sparklineStartDate, $lte: sparklineEndDate },
-            isSeed: { $ne: true }
+            ...(includeSeedData ? {} : { isSeed: { $ne: true } })
           }
         },
         {
@@ -1247,7 +1275,8 @@ router.get('/stats', checkAdminKey, async (req, res) => {
           }
         },
         { $sort: { _id: 1 } }
-      ])
+        ]);
+      })()
     ]);
 
     // Créer un map pour un accès rapide
