@@ -7,6 +7,7 @@ const isProduction =
 
 /**
  * SOURCE UNIQUE DE VÉRITÉ (PRODUITS)
+ * Produits statiques + produits DB
  */
 const PRODUCTS = {
   hismile: {
@@ -25,6 +26,49 @@ const PRODUCTS = {
       'Recommandé par les dentistes',
     ],
     usage: 'Appliquer sur les dents propres.',
+    offers: [
+      { qty: 1, label: '1 Produit - 9,900 FCFA', priceValue: 9900 },
+      { qty: 2, label: '2 Produits - 14,000 FCFA', priceValue: 14000 },
+    ],
+  },
+  bbl: {
+    slug: 'bbl',
+    productName: 'BBL',
+    price: '25 000 FCFA',
+    images: [],
+    shortDesc: 'Solution BBL pour une peau éclatante.',
+    fullDesc: 'BBL est une solution innovante pour prendre soin de votre peau et obtenir un éclat naturel.',
+    benefits: [
+      'Peau éclatante',
+      'Résultat rapide',
+      'Facile à utiliser',
+      'Sûr et efficace',
+    ],
+    usage: 'Appliquer selon les instructions.',
+    offers: [
+      { qty: 1, label: '1 Flacon - 25 000 FCFA', priceValue: 25000 },
+      { qty: 2, label: '2 Flacons - 40 000 FCFA', priceValue: 40000 },
+    ],
+  },
+  gumies: {
+    slug: 'gumies',
+    productName: 'Gumies',
+    price: '16 000 FCFA',
+    images: [],
+    shortDesc: 'Gummies délicieux pour le bien-être quotidien.',
+    fullDesc: 'Gumies sont des gummies au goût fruité conçus pour votre bien-être.',
+    benefits: [
+      'Goût fruité délicieux',
+      'Faciles à consommer',
+      'Bien-être quotidien',
+      'Ingrédients naturels',
+    ],
+    usage: 'Prendre 1-2 gummies par jour.',
+    offers: [
+      { qty: 1, label: '1 Boite - 16 000 FCFA', priceValue: 16000 },
+      { qty: 2, label: '2 Boites - 25 000 FCFA', priceValue: 25000 },
+      { qty: 3, label: '3 Boites - 31 000 FCFA', priceValue: 31000 },
+    ],
   },
 };
 

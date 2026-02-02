@@ -28,14 +28,23 @@ const checkAdminKey = (req, res, next) => {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    // Accept both images and gifs
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/gif'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non supporté. Images et GIFs uniquement.'), false);
+    }
+  },
 });
 
 /**
  * POST /api/admin/upload-image
  * Upload image to Cloudflare R2 (admin only)
  */
-router.post('/upload-image', checkAdminKey, upload.single('file'), async (req, res) => {
+router.post('/upload-image', checkAdminKey, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -138,6 +147,178 @@ router.post('/products', checkAdminKey, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/admin/products/:slug
+ * Update an existing product (admin only)
+ */
+router.put('/products/:slug', checkAdminKey, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { productName, shortDesc = '', images = [], offers = [] } = req.body;
+
+    if (!productName || !productName.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le nom du produit est requis',
+      });
+    }
+
+    let product = await Product.findOne({ slug });
+    let isStatic = false;
+    
+    // If not in DB, check static products
+    if (!product) {
+      // Import the PRODUCTS object from the current file's scope
+      const { default: productsRouter } = await import('./products.js');
+      // Since we can't easily access PRODUCTS from another module in ES modules,
+      // we'll define the static products inline for now
+      const staticProducts = {
+        hismile: {
+          slug: 'hismile',
+          productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+          price: '9,900 FCFA',
+          images: [],
+          shortDesc: 'Sérum correcteur de teinte pour les dents. Effet immédiat, sans peroxyde.',
+          fullDesc: 'Hismile est un sérum dentaire innovant qui corrige la teinte des dents dès la première utilisation.',
+          benefits: ['Résultat immédiat', 'Sans peroxyde', 'Sans douleur', 'Recommandé par les dentistes'],
+          usage: 'Appliquer sur les dents propres.',
+          offers: [
+            { qty: 1, label: '1 Produit - 9,900 FCFA', priceValue: 9900 },
+            { qty: 2, label: '2 Produits - 14,000 FCFA', priceValue: 14000 },
+          ],
+        },
+        bbl: {
+          slug: 'bbl',
+          productName: 'BBL',
+          price: 'Prix sur demande',
+          images: [],
+          shortDesc: '',
+          fullDesc: '',
+          benefits: [],
+          usage: '',
+          offers: [],
+        },
+        gumies: {
+          slug: 'gumies',
+          productName: 'Gumies',
+          price: 'Prix sur demande',
+          images: [],
+          shortDesc: '',
+          fullDesc: '',
+          benefits: [],
+          usage: '',
+          offers: [
+            { qty: 1, label: '1 Boite - 16 000 FCFA', priceValue: 16000 },
+            { qty: 2, label: '2 Boites - 25 000 FCFA', priceValue: 25000 },
+            { qty: 3, label: '3 Boites - 31 000 FCFA', priceValue: 31000 },
+          ],
+        },
+      };
+      
+      if (staticProducts[slug]) {
+        product = staticProducts[slug];
+        isStatic = true;
+      }
+    }
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Produit introuvable',
+      });
+    }
+
+    const cleanedImages = Array.isArray(images)
+      ? images.map((img) => img.trim()).filter(Boolean)
+      : [];
+
+    const cleanedOffers = Array.isArray(offers)
+      ? offers
+          .map((offer) => ({
+            qty: Number(offer.qty) || 1,
+            label: offer.label?.toString().trim() || '',
+            priceValue: Number(offer.priceValue) || 0,
+          }))
+          .filter((offer) => offer.qty > 0)
+      : [];
+
+    if (isStatic) {
+      // For static products, create/update in DB
+      const dbProduct = await Product.findOne({ slug });
+      if (dbProduct) {
+        // Update existing DB product
+        dbProduct.productName = productName.trim();
+        dbProduct.shortDesc = shortDesc?.toString().trim() || '';
+        dbProduct.images = cleanedImages;
+        dbProduct.offers = cleanedOffers;
+        await dbProduct.save();
+        product = dbProduct;
+      } else {
+        // Create new DB product to override static
+        const newProduct = new Product({
+          slug,
+          productName: productName.trim(),
+          shortDesc: shortDesc?.toString().trim() || '',
+          images: cleanedImages,
+          offers: cleanedOffers,
+        });
+        await newProduct.save();
+        product = newProduct;
+      }
+    } else {
+      // Update existing DB product
+      product.productName = productName.trim();
+      product.shortDesc = shortDesc?.toString().trim() || '';
+      product.images = cleanedImages;
+      product.offers = cleanedOffers;
+      await product.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Produit mis à jour avec succès',
+      product,
+    });
+  } catch (error) {
+    console.error('Admin product update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la mise à jour du produit',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/products/:slug
+ * Delete a product (admin only)
+ */
+router.delete('/products/:slug', checkAdminKey, async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const product = await Product.findOneAndDelete({ slug });
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Produit introuvable',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Produit supprimé avec succès',
+    });
+  } catch (error) {
+    console.error('Admin product delete error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la suppression du produit',
+      error: error.message,
+    });
+  }
+});
+
 const getCloudflareVisitTotal = async (rangeStart, rangeEnd) => {
   const match = {
     source: 'daily',
@@ -223,7 +404,7 @@ router.post('/orders/bulk-delete', checkAdminKey, async (req, res) => {
  */
 router.post('/orders', checkAdminKey, async (req, res) => {
   try {
-    const { name, phone, city, address, productSlug, quantity, totalPrice, status, productName, productPrice, productShortDesc } = req.body;
+    const { name, phone, city, quarter, productSlug, quantity, totalPrice, status, productName, productPrice, productShortDesc } = req.body;
 
     // Validation
     if (!name || !phone || !city || !productSlug) {
@@ -273,7 +454,7 @@ router.post('/orders', checkAdminKey, async (req, res) => {
       name: name.trim(),
       phone: normalizedPhone,
       city: city.trim(),
-      address: address ? address.trim() : '',
+      address: quarter ? quarter.trim() : '', // Utiliser quarter comme address
       productSlug: productSlug.trim(),
       quantity: parseInt(quantity) || 1,
       totalPrice: finalTotalPrice,

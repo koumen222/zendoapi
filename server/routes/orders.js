@@ -13,7 +13,7 @@ router.post('/', async (req, res) => {
   try {
     console.log('[ORDER] New order received');
 
-    const { name, phone, city, address = '', productSlug, quantity = 1 } = req.body;
+    const { name, phone, city, address = '', quarter = '', productSlug, quantity = 1 } = req.body;
 
     // Validation basique
     if (!name || !phone || !city) {
@@ -70,7 +70,7 @@ router.post('/', async (req, res) => {
       name: name.trim(),
       phone: phone.trim(),
       city: city.trim(),
-      address: address.trim(),
+      address: quarter ? quarter.trim() : address.trim(), // Utiliser quarter si disponible, sinon address
       productSlug: productSlug?.trim() || 'hismile',
       quantity: qty,
       totalPrice,

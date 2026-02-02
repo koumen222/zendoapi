@@ -82,7 +82,6 @@ const isOriginAllowed = (origin) => {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  // PREFLIGHT — TOUJOURS RÉPONDRE
   if (req.method === "OPTIONS") {
     if (origin && isOriginAllowed(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
@@ -120,11 +119,13 @@ const { default: orderRoutes } = await import("./routes/orders.js");
 const { default: adminRoutes } = await import("./routes/admin.js");
 const { default: productRoutes } = await import("./routes/products.js");
 const { default: analyticsRoutes } = await import("./routes/analytics.js");
+const { default: whatsappRoutes } = await import("./routes/whatsapp.js");
 
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 /**
  * ============================================================================
