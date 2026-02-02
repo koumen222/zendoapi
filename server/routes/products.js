@@ -29,6 +29,35 @@ const PRODUCTS = {
 };
 
 /**
+ * GET /api/products
+ * List all products from DB + static
+ */
+router.get('/', async (req, res) => {
+  try {
+    const dbProducts = await Product.find().sort({ createdAt: -1 }).lean();
+    const staticProducts = Object.values(PRODUCTS);
+    
+    // Merge: DB products first, then static ones not already in DB
+    const dbSlugs = new Set(dbProducts.map((p) => p.slug));
+    const merged = [
+      ...dbProducts,
+      ...staticProducts.filter((p) => !dbSlugs.has(p.slug)),
+    ];
+
+    res.json({
+      success: true,
+      products: merged,
+    });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des produits',
+    });
+  }
+});
+
+/**
  * GET /api/products/:slug
  * ⚠️ JAMAIS DE SCRAPER ICI
  */
