@@ -84,7 +84,7 @@ app.use((req, res, next) => {
 
   // PREFLIGHT — TOUJOURS RÉPONDRE
   if (req.method === "OPTIONS") {
-    if (isOriginAllowed(origin)) {
+    if (origin && isOriginAllowed(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader(
         "Access-Control-Allow-Methods",
@@ -101,7 +101,7 @@ app.use((req, res, next) => {
   }
 
   // REQUÊTES NORMALES
-  if (isOriginAllowed(origin)) {
+  if (origin && isOriginAllowed(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
@@ -116,10 +116,10 @@ app.use(express.json({ limit: "1mb" }));
  * ROUTES
  * ============================================================================
  */
-import orderRoutes from "./routes/orders.js";
-import adminRoutes from "./routes/admin.js";
-import productRoutes from "./routes/products.js";
-import analyticsRoutes from "./routes/analytics.js";
+const { default: orderRoutes } = await import("./routes/orders.js");
+const { default: adminRoutes } = await import("./routes/admin.js");
+const { default: productRoutes } = await import("./routes/products.js");
+const { default: analyticsRoutes } = await import("./routes/analytics.js");
 
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);

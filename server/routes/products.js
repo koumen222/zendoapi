@@ -1,4 +1,5 @@
 import express from 'express';
+import Product from '../models/Product.js';
 
 const router = express.Router();
 const isProduction =
@@ -31,10 +32,12 @@ const PRODUCTS = {
  * GET /api/products/:slug
  * ⚠️ JAMAIS DE SCRAPER ICI
  */
-router.get('/:slug', (req, res) => {
+router.get('/:slug', async (req, res) => {
   const { slug } = req.params;
+  const normalizedSlug = (slug || '').toLowerCase();
 
-  const product = PRODUCTS[slug];
+  const dbProduct = await Product.findOne({ slug: normalizedSlug }).lean();
+  const product = dbProduct || PRODUCTS[normalizedSlug];
 
   if (!product) {
     return res.status(404).json({
@@ -54,7 +57,7 @@ router.get('/:slug', (req, res) => {
   res.json({
     success: true,
     product,
-    source: 'static',
+    source: dbProduct ? 'db' : 'static',
   });
 });
 

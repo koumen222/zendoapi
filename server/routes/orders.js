@@ -57,7 +57,15 @@ router.post('/', async (req, res) => {
       totalPriceValue = priceValue;
     }
 
-    // Création de la commande
+    // Calculer totalPriceValue si manquant (pour les anciennes commandes)
+    if (!totalPriceValue && totalPrice) {
+      const priceMatch = totalPrice.match(/[\d,]+/);
+      if (priceMatch) {
+        totalPriceValue = parseFloat(priceMatch[0].replace(/,/g, '')) || 0;
+      }
+    }
+
+    // Création de la commande (isSeed: false par défaut pour les vraies commandes)
     const order = new Order({
       name: name.trim(),
       phone: phone.trim(),
@@ -67,11 +75,12 @@ router.post('/', async (req, res) => {
       quantity: qty,
       totalPrice,
       totalPriceValue,
+      isSeed: false, // Commande réelle, pas de seed
       ...productData,
     });
 
     console.log('\n═══════════════════════════════════════════════════════════');
-    console.log('💾 SAUVEGARDE COMMANDE');
+    console.log('💾 SAUVEGARDE COMMANDE DANS LA BD');
     console.log('═══════════════════════════════════════════════════════════');
     console.log('📋 Commande:', {
       name: order.name,
@@ -81,11 +90,22 @@ router.post('/', async (req, res) => {
       quantity: order.quantity,
       totalPrice: order.totalPrice,
       totalPriceValue: order.totalPriceValue,
+      isSeed: order.isSeed,
     });
 
+    // Sauvegarder dans la BD MongoDB
     await order.save();
-    console.log('✅ Commande sauvegardée');
+    console.log('✅ Commande sauvegardée dans la BD MongoDB');
     console.log('🆔 ID:', order._id);
+    console.log('📅 Date:', order.createdAt);
+    
+    // Vérification que la commande est bien dans la BD
+    const savedOrder = await Order.findById(order._id);
+    if (savedOrder) {
+      console.log('✅ Vérification: Commande confirmée dans la BD');
+    } else {
+      console.error('❌ ERREUR: Commande non trouvée après sauvegarde');
+    }
 
     // Données Telegram
     const notificationData = {

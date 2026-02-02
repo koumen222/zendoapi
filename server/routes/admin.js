@@ -1,8 +1,11 @@
 import express from 'express';
+import multer from 'multer';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import Visit from '../models/Visit.js';
 import CloudflareVisit from '../models/CloudflareVisit.js';
 import { fetchDailyVisits, fetchMinuteVisits } from '../utils/cloudflareAnalytics.js';
+import { uploadToR2 } from '../utils/r2.js';
 
 const router = express.Router();
 
@@ -23,7 +26,117 @@ const checkAdminKey = (req, res, next) => {
   next();
 };
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+/**
+ * POST /api/admin/upload-image
+ * Upload image to Cloudflare R2 (admin only)
+ */
+router.post('/upload-image', checkAdminKey, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Aucun fichier reçu',
+      });
+    }
+
+    const { buffer, originalname, mimetype } = req.file;
+    const { url, key } = await uploadToR2({
+      buffer,
+      originalname,
+      contentType: mimetype,
+      prefix: 'products',
+    });
+
+    res.status(201).json({
+      success: true,
+      url,
+      key,
+    });
+  } catch (error) {
+    console.error('R2 upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur upload image',
+      error: error.message,
+    });
+  }
+});
+
 const formatDateOnly = (date) => date.toISOString().split('T')[0];
+
+/**
+ * POST /api/admin/products
+ * Create a new product (admin only)
+ */
+router.post('/products', checkAdminKey, async (req, res) => {
+  try {
+    const { slug, productName, shortDesc = '', images = [], offers = [] } = req.body;
+
+    if (!productName || !productName.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le nom du produit est requis',
+      });
+    }
+
+    const normalizedSlug = (slug || productName)
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    const existing = await Product.findOne({ slug: normalizedSlug }).lean();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Ce slug existe déjà',
+      });
+    }
+
+    const cleanedImages = Array.isArray(images)
+      ? images.map((img) => img.trim()).filter(Boolean)
+      : [];
+
+    const cleanedOffers = Array.isArray(offers)
+      ? offers
+          .map((offer) => ({
+            qty: Number(offer.qty) || 1,
+            label: offer.label?.toString().trim() || '',
+            priceValue: Number(offer.priceValue) || 0,
+          }))
+          .filter((offer) => offer.qty > 0)
+      : [];
+
+    const product = new Product({
+      slug: normalizedSlug,
+      productName: productName.trim(),
+      shortDesc: shortDesc?.toString().trim() || '',
+      images: cleanedImages,
+      offers: cleanedOffers,
+    });
+
+    await product.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Produit créé avec succès',
+      product,
+    });
+  } catch (error) {
+    console.error('Admin product creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la création du produit',
+      error: error.message,
+    });
+  }
+});
 
 const getCloudflareVisitTotal = async (rangeStart, rangeEnd) => {
   const match = {
@@ -155,7 +268,7 @@ router.post('/orders', checkAdminKey, async (req, res) => {
       }
     }
 
-    // Create order
+    // Create order (isSeed: false pour les commandes admin réelles)
     const order = new Order({
       name: name.trim(),
       phone: normalizedPhone,
@@ -165,10 +278,22 @@ router.post('/orders', checkAdminKey, async (req, res) => {
       quantity: parseInt(quantity) || 1,
       totalPrice: finalTotalPrice,
       status: status || 'new',
+      isSeed: false, // Commande réelle créée par admin
       ...productData,
     });
 
+    console.log('💾 [ADMIN] Sauvegarde commande dans la BD:', {
+      name: order.name,
+      phone: order.phone,
+      city: order.city,
+      productSlug: order.productSlug,
+      quantity: order.quantity,
+      totalPrice: order.totalPrice,
+      isSeed: order.isSeed,
+    });
+
     await order.save();
+    console.log('✅ [ADMIN] Commande sauvegardée dans la BD, ID:', order._id);
 
     res.status(201).json({
       success: true,
@@ -197,6 +322,7 @@ router.post('/orders', checkAdminKey, async (req, res) => {
  *   - city: filter by city
  *   - startDate: filter orders from this date (ISO format)
  *   - endDate: filter orders until this date (ISO format)
+ *   - days: filter orders for the last N days (7, 30, 90, 365)
  */
 router.get('/orders', checkAdminKey, async (req, res) => {
   try {
@@ -208,7 +334,8 @@ router.get('/orders', checkAdminKey, async (req, res) => {
       search,
       city,
       startDate,
-      endDate
+      endDate,
+      days
     } = req.query;
 
     const pageNum = parseInt(page);
@@ -229,15 +356,27 @@ router.get('/orders', checkAdminKey, async (req, res) => {
     }
 
     // Filtre par dates
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) {
-        filter.createdAt.$gte = new Date(startDate);
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999); // Inclure toute la journée
-        filter.createdAt.$lte = end;
+    if (startDate || endDate || days) {
+      const rangeStart = startDate ? new Date(startDate) : null;
+      const rangeEnd = endDate ? new Date(endDate) : null;
+      if (!startDate && !endDate && days) {
+        const daysNum = Math.max(parseInt(days, 10) || 1, 1);
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        const start = new Date(end);
+        start.setDate(start.getDate() - daysNum + 1);
+        start.setHours(0, 0, 0, 0);
+        filter.createdAt = { $gte: start, $lte: end };
+      } else {
+        filter.createdAt = {};
+        if (rangeStart) {
+          rangeStart.setHours(0, 0, 0, 0);
+          filter.createdAt.$gte = rangeStart;
+        }
+        if (rangeEnd) {
+          rangeEnd.setHours(23, 59, 59, 999);
+          filter.createdAt.$lte = rangeEnd;
+        }
       }
     }
 
@@ -279,6 +418,7 @@ router.get('/orders', checkAdminKey, async (req, res) => {
         city: city || '',
         startDate: startDate || '',
         endDate: endDate || '',
+        days: days || '',
       },
     });
   } catch (error) {
@@ -1036,22 +1176,20 @@ router.get('/stats', checkAdminKey, async (req, res) => {
       sansSeed: ordersWithoutSeed,
       avecSeed: ordersWithSeed,
       showAll,
+      includeSeedData,
+      rangeStart: rangeStart?.toISOString(),
+      rangeEnd: rangeEnd?.toISOString(),
       filter: baseFilter,
     });
 
     // Calculate visits for the period (Cloudflare if available)
     let visitsInRange = 0;
-    const visitsFilter = {
-      $or: [
-        { isSeed: { $exists: false } },
-        { isSeed: false },
-        { isSeed: { $ne: true } }
-      ]
-    };
+    const visitsFilter = includeSeedData ? {} : { isSeed: { $ne: true } };
     if (showAll) {
       // Pour "all", compter toutes les visites sans filtre de date
       visitsInRange = await Visit.countDocuments(visitsFilter);
-    } else {
+    } else if (rangeStart && rangeEnd) {
+      // Pour dates précises, ajouter le filtre de date
       visitsFilter.createdAt = { $gte: rangeStart, $lte: rangeEnd };
       const cloudflareVisitsInRange = await getCloudflareVisitTotal(rangeStart, rangeEnd);
       visitsInRange = cloudflareVisitsInRange !== null
@@ -1081,19 +1219,33 @@ router.get('/stats', checkAdminKey, async (req, res) => {
               $let: {
                 vars: {
                   price: {
-                    $ifNull: [
-                      { $arrayElemAt: [{ $split: [{ $ifNull: ['$totalPrice', '$productPrice'] }, ' '] }, 0] },
-                      '0'
-                    ]
+                    $ifNull: ['$totalPrice', '$productPrice']
                   }
                 },
                 in: {
-                  $toDouble: {
-                    $replaceAll: {
-                      input: '$$price',
-                      find: ',',
-                      replacement: ''
-                    }
+                  $convert: {
+                    input: {
+                      $replaceAll: {
+                        input: {
+                          $replaceAll: {
+                            input: {
+                              $replaceAll: {
+                                input: { $ifNull: ['$$price', '0'] },
+                                find: 'FCFA',
+                                replacement: ''
+                              }
+                            },
+                            find: ' ',
+                            replacement: ''
+                          }
+                        },
+                        find: ',',
+                        replacement: ''
+                      }
+                    },
+                    to: 'double',
+                    onError: 0,
+                    onNull: 0
                   }
                 }
               }
@@ -1141,7 +1293,7 @@ router.get('/stats', checkAdminKey, async (req, res) => {
     let previousFilter = includeSeedData ? {} : { isSeed: { $ne: true } };
     let previousVisits = 0;
     
-    if (!showAll && rangeStart && rangeEnd) {
+    if (!showAll && rangeStart && rangeEnd && rangeDays) {
       const previousEndDate = new Date(rangeStart);
       previousEndDate.setMilliseconds(-1);
       const previousStartDate = new Date(previousEndDate);
@@ -1166,19 +1318,33 @@ router.get('/stats', checkAdminKey, async (req, res) => {
                 $let: {
                   vars: {
                     price: {
-                      $ifNull: [
-                        { $arrayElemAt: [{ $split: [{ $ifNull: ['$totalPrice', '$productPrice'] }, ' '] }, 0] },
-                        '0'
-                      ]
+                      $ifNull: ['$totalPrice', '$productPrice']
                     }
                   },
                   in: {
-                    $toDouble: {
-                      $replaceAll: {
-                        input: '$$price',
-                        find: ',',
-                        replacement: ''
-                      }
+                    $convert: {
+                      input: {
+                        $replaceAll: {
+                          input: {
+                            $replaceAll: {
+                              input: {
+                                $replaceAll: {
+                                  input: { $ifNull: ['$$price', '0'] },
+                                  find: 'FCFA',
+                                  replacement: ''
+                                }
+                              },
+                              find: ' ',
+                              replacement: ''
+                            }
+                          },
+                          find: ',',
+                          replacement: ''
+                        }
+                      },
+                      to: 'double',
+                      onError: 0,
+                      onNull: 0
                     }
                   }
                 }
