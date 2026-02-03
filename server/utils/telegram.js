@@ -47,15 +47,39 @@ export async function sendTelegramNotification(orderData) {
     }
 
     // Construction du message avec emojis (optimisé)
-    const message = `🛒 NOUVELLE COMMANDE
+    // Message personnalisé selon le produit
+    let productEmoji = '📦';
+    let productTitle = orderData.product || 'Produit';
+    
+    if (orderData.productSlug) {
+      switch (orderData.productSlug) {
+        case 'hismile':
+          productEmoji = '✨';
+          productTitle = 'Hismile - Sérum Blanchissant';
+          break;
+        case 'bbl':
+          productEmoji = '🌟';
+          productTitle = 'BBL - Solution Peau Éclatante';
+          break;
+        case 'gumies':
+          productEmoji = '🍬';
+          productTitle = 'Gumies - Gummies Bien-être';
+          break;
+        default:
+          productEmoji = '📦';
+          productTitle = orderData.product || 'Produit';
+      }
+    }
+
+    const message = `${productEmoji} NOUVELLE COMMANDE - ${productTitle}
 
 👤 Nom: ${orderData.name}
 📞 Téléphone: ${orderData.phone}
-📦 Produit: ${orderData.product}
 🔢 Quantité: ${orderData.quantity}
 💰 Prix: ${orderData.price}
 📍 Ville: ${orderData.city}
-🏠 Adresse: ${orderData.address || 'Non précisée'}`;
+🏠 Adresse: ${orderData.address || 'Non précisée'}
+🆔 ID: ${orderData.orderId || 'N/A'}`;
 
     // URL de l'API Telegram
     const url = `${TELEGRAM_API_URL}${TG_TOKEN}/sendMessage`;

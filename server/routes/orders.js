@@ -23,38 +23,84 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Produit Hismile (hardcodé – version simple)
-    const productData = {
-      productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
-      productPrice: quantity === 1 ? '9,900 FCFA' : '14,000 FCFA',
-      productImages: [],
-      productShortDesc:
-        'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
-      productFullDesc: '',
-      productBenefits: [],
-      productUsage: '',
-      productGuarantee:
-        'Il est recommandé par les dentistes du Cameroun et du monde entier.',
-      productDeliveryInfo: '',
-      productReviews: [],
-    };
-
-    // Calcul du prix
+    // Récupérer les données du produit depuis le slug
+    let productData = {};
     let totalPrice = '';
     let totalPriceValue = 0;
 
-    const qty = parseInt(quantity) || 1;
+    // Importer les produits statiques
+    const productsModule = await import('./products.js');
+    const PRODUCTS = productsModule.PRODUCTS || productsModule.default?.PRODUCTS || {};
+    
+    // Chercher le produit dans les produits statiques
+    const staticProduct = PRODUCTS[productSlug];
+    
+    if (staticProduct) {
+      // Utiliser les données du produit statique
+      productData = {
+        productName: staticProduct.productName,
+        productPrice: staticProduct.price || 'Prix sur demande',
+        productImages: staticProduct.images || [],
+        productShortDesc: staticProduct.shortDesc || '',
+        productFullDesc: staticProduct.fullDesc || '',
+        productBenefits: staticProduct.benefits || [],
+        productUsage: staticProduct.usage || '',
+        productGuarantee: staticProduct.guarantee || '',
+        productDeliveryInfo: staticProduct.deliveryInfo || '',
+        productReviews: staticProduct.reviews || [],
+      };
 
-    if (qty === 1) {
-      totalPrice = '9,900 FCFA';
-      totalPriceValue = 9900;
-    } else if (qty === 2) {
-      totalPrice = '14,000 FCFA';
-      totalPriceValue = 14000;
+      // Calculer le prix selon les offres du produit
+      const qty = parseInt(quantity) || 1;
+      const selectedOffer = staticProduct.offers?.find(offer => offer.qty === qty);
+      if (selectedOffer) {
+        totalPrice = selectedOffer.label;
+        totalPriceValue = selectedOffer.priceValue || 0;
+      } else {
+        // Fallback si pas d'offre trouvée - calculer prix de base
+        if (staticProduct.price && staticProduct.price !== 'Prix sur demande') {
+          // Extraire le prix numérique du prix de base
+          const basePriceMatch = staticProduct.price.match(/[\d,]+/);
+          const basePrice = basePriceMatch ? parseFloat(basePriceMatch[0].replace(/,/g, '')) : 0;
+          totalPriceValue = basePrice * qty;
+          totalPrice = `${totalPriceValue.toLocaleString('fr-FR')} FCFA`;
+        } else {
+          totalPrice = staticProduct.price || 'Prix sur demande';
+          totalPriceValue = 0;
+        }
+      }
     } else {
-      const priceValue = qty * 9900;
-      totalPrice = `${priceValue.toLocaleString('fr-FR')} FCFA`;
-      totalPriceValue = priceValue;
+      // Fallback Hismile si produit non trouvé
+      productData = {
+        productName: 'Hismile™ – Le Sérum Qui Blanchis tes dents dès le premier jour',
+        productPrice: quantity === 1 ? '9,900 FCFA' : '14,000 FCFA',
+        productImages: [],
+        productShortDesc: 'Sérum correcteur de teinte pour les dents. Effet instantané, sans peroxyde.',
+        productFullDesc: '',
+        productBenefits: [],
+        productUsage: '',
+        productGuarantee: 'Il est recommandé par les dentistes du Cameroun et du monde entier.',
+        productDeliveryInfo: '',
+        productReviews: [],
+      };
+
+      const qty = parseInt(quantity) || 1;
+      // Offres Hismile par défaut
+      const hismileOffers = [
+        { qty: 1, label: '1 Produit - 9,900 FCFA', priceValue: 9900 },
+        { qty: 2, label: '2 Produits - 14,000 FCFA', priceValue: 14000 },
+      ];
+      
+      const selectedHismileOffer = hismileOffers.find(offer => offer.qty === qty);
+      if (selectedHismileOffer) {
+        totalPrice = selectedHismileOffer.label;
+        totalPriceValue = selectedHismileOffer.priceValue;
+      } else {
+        // Calcul par défaut si quantité > 2
+        const priceValue = qty * 9900;
+        totalPrice = `${priceValue.toLocaleString('fr-FR')} FCFA`;
+        totalPriceValue = priceValue;
+      }
     }
 
     // Calculer totalPriceValue si manquant (pour les anciennes commandes)
@@ -72,7 +118,7 @@ router.post('/', async (req, res) => {
       city: city.trim(),
       address: quarter ? quarter.trim() : address.trim(), // Utiliser quarter si disponible, sinon address
       productSlug: productSlug?.trim() || 'hismile',
-      quantity: qty,
+      quantity: parseInt(quantity) || 1,
       totalPrice,
       totalPriceValue,
       isSeed: false, // Commande réelle, pas de seed
@@ -112,10 +158,12 @@ router.post('/', async (req, res) => {
       name: order.name,
       phone: order.phone,
       product: order.productName,
+      productSlug: productSlug, // Ajouter le slug pour personnalisation
       price: totalPrice,
       quantity: order.quantity,
       city: order.city,
       address: order.address,
+      orderId: order._id.toString(), // Ajouter l'ID de commande
     };
 
     // Meta CAPI (non bloquant)

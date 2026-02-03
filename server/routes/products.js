@@ -134,4 +134,5 @@ router.get('/:slug', async (req, res) => {
   });
 });
 
+export { PRODUCTS };
 export default router;
